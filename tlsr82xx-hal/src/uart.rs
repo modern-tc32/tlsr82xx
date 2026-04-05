@@ -54,6 +54,24 @@ pub enum RxPin {
     Pd6 = 0x0340,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Pins {
+    pub tx: TxPin,
+    pub rx: RxPin,
+}
+
+impl Pins {
+    pub const fn new(tx: TxPin, rx: RxPin) -> Self {
+        Self { tx, rx }
+    }
+
+    pub const PA2_PA0: Self = Self::new(TxPin::Pa2, RxPin::Pa0);
+    pub const PB1_PA0: Self = Self::new(TxPin::Pb1, RxPin::Pa0);
+    pub const PB1_PB0: Self = Self::new(TxPin::Pb1, RxPin::Pb0);
+    pub const PC2_PC3: Self = Self::new(TxPin::Pc2, RxPin::Pc3);
+    pub const PD0_PD6: Self = Self::new(TxPin::Pd0, RxPin::Pd6);
+}
+
 impl Config {
     pub const fn new(baudrate: u32, sysclk_hz: u32) -> Self {
         Self {
@@ -202,9 +220,11 @@ impl fmt::Write for Uart {
     }
 }
 
-pub fn apply_pins(tx: TxPin, rx: RxPin) {
+pub fn apply_pins(pins: Pins) {
     unsafe {
-        uart_gpio_set(tx as u32, rx as u32);
+        // The 8258/8278 SDK configures TX and RX pins independently, so any
+        // listed TxPin/RxPin combination is accepted by the vendor driver.
+        uart_gpio_set(pins.tx as u32, pins.rx as u32);
     }
 }
 

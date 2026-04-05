@@ -3,7 +3,7 @@ use tlsr82xx_hal::gpio::{
     DriveStrength, GpioExt, Input, Level, Output, PinFunction, PA7, PB4, PB5, PD2, Pins,
 };
 use tlsr82xx_hal::pac;
-use tlsr82xx_hal::uart::{self, RxPin, TxPin};
+use tlsr82xx_hal::uart::{self, Pins as UartPins};
 
 pub struct Board {
     pub led_y: PB4<Output>,
@@ -52,5 +52,5 @@ pub fn configure_rgb_pins(pins: &mut Pins) {
 }
 
 pub fn configure_uart_pins() {
-    uart::apply_pins(TxPin::Pb1, RxPin::Pa0);
+    uart::apply_pins(UartPins::PB1_PA0);
 }
