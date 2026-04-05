@@ -1,0 +1,13 @@
+[package]
+name = "tlsr82xx-hal"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+tlsr82xx-pac = { path = "../tlsr82xx-pac" }
+
+[lib]
+path = "src/lib.rs"
+

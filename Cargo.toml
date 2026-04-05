@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "tlsr82xx-pac",
+  "tlsr82xx-hal",
+]
+resolver = "2"
+
