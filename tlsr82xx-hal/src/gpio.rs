@@ -16,10 +16,7 @@ const PORT_E: u8 = 4;
 
 const GPIO_BASE: usize = 0x0080_0580;
 const IRQ_BASE: usize = 0x0080_0640;
-
-unsafe extern "C" {
-    fn gpio_set_func(pin: u32, func: u32);
-}
+const MUX_BASE: usize = 0x0080_05a8;
 
 pub struct Input;
 pub struct Output;
@@ -215,9 +212,7 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     pub fn set_function(&mut self, function: PinFunction) {
-        unsafe {
-            gpio_set_func(u32::from(Self::raw_pin()), function as u32);
-        }
+        set_function_raw(Self::raw_pin(), function);
     }
 
     #[inline(always)]
@@ -456,6 +451,150 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     pub fn disable_wakeup(&mut self) {
         Self::modify_raw_reg(Self::route_reg(InterruptRoute::Core), Self::mask(), false);
     }
+}
+
+#[inline(always)]
+fn decode_raw_pin(raw_pin: u16) -> (u8, u8, u8) {
+    let port = (raw_pin >> 8) as u8;
+    let mask = raw_pin as u8;
+    debug_assert!(mask.is_power_of_two());
+    let bit = mask.trailing_zeros() as u8;
+    (port, bit, mask)
+}
+
+#[inline(always)]
+fn reg_raw(port: u8, offset: usize) -> *mut u8 {
+    (GPIO_BASE + ((port as usize) << 3) + offset) as *mut u8
+}
+
+#[inline(always)]
+fn modify_raw_port_reg(port: u8, offset: usize, mask: u8, set: bool) {
+    unsafe {
+        let reg = reg_raw(port, offset);
+        let mut value = core::ptr::read_volatile(reg.cast_const());
+        if set {
+            value |= mask;
+        } else {
+            value &= !mask;
+        }
+        core::ptr::write_volatile(reg, value);
+    }
+}
+
+#[inline(always)]
+fn write_mux_selector(port: u8, bit: u8, selector: u8) {
+    let reg = (MUX_BASE + (port as usize * 2) + (bit as usize / 4)) as *mut u8;
+    let shift = (bit % 4) * 2;
+    let field_mask = !(0b11 << shift);
+    unsafe {
+        let value = (core::ptr::read_volatile(reg.cast_const()) & field_mask)
+            | ((selector & 0b11) << shift);
+        core::ptr::write_volatile(reg, value);
+    }
+}
+
+#[inline(always)]
+fn selector_for_function(raw_pin: u16, function: PinFunction) -> Option<u8> {
+    match (raw_pin, function) {
+        (_, PinFunction::Gpio) => None,
+        (0x0001, PinFunction::Uart) => Some(0b10), // PA0
+        (0x0004, PinFunction::Uart) => Some(0b01), // PA2
+        (0x0101, PinFunction::Uart) => Some(0b01), // PB0
+        (0x0102, PinFunction::Uart) => Some(0b01), // PB1
+        (0x0204, PinFunction::Uart) => Some(0b01), // PC2
+        (0x0204, PinFunction::Pwm0) => Some(0b00), // PC2
+        (0x0208, PinFunction::Uart) => Some(0b01), // PC3
+        (0x0208, PinFunction::Pwm1) => Some(0b00), // PC3
+        (0x0210, PinFunction::Pwm2) => Some(0b00), // PC4
+        _ => None,
+    }
+}
+
+pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) {
+    let (port, bit, mask) = decode_raw_pin(raw_pin);
+    if matches!(function, PinFunction::Gpio) {
+        modify_raw_port_reg(port, 0x06, mask, true);
+        return;
+    }
+
+    let selector = selector_for_function(raw_pin, function)
+        .unwrap_or_else(|| panic!("unsupported pin/function pair: 0x{raw_pin:04x} {function:?}"));
+    write_mux_selector(port, bit, selector);
+    modify_raw_port_reg(port, 0x06, mask, false);
+}
+
+pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
+    let (port, _, mask) = decode_raw_pin(raw_pin);
+    modify_raw_port_reg(port, 0x01, mask, enabled);
+}
+
+pub(crate) fn set_pull_resistor_raw(raw_pin: u16, pull: analog::Pull) {
+    let (port, bit, _) = decode_raw_pin(raw_pin);
+    let Some((addr, shift)) = pull_addr_shift_raw(port, bit) else {
+        return;
+    };
+    let mask = 0b11 << shift;
+    let value = (analog::read(addr) & !mask) | (pull.bits() << shift);
+    analog::write(addr, value);
+}
+
+#[inline(always)]
+fn pull_addr_shift_raw(port: u8, bit: u8) -> Option<(u8, u8)> {
+    #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+    {
+        if port <= PORT_D {
+            let addr = 0x0e + port + (bit / 4);
+            let shift = (bit % 4) * 2;
+            return Some((addr, shift));
+        }
+        return None;
+    }
+
+    #[cfg(feature = "chip-826x")]
+    {
+        return match (port, bit) {
+            (PORT_A, 0) => Some((0x0a, 4)),
+            (PORT_A, 1) => Some((0x0a, 6)),
+            (PORT_A, 2) => Some((0x0b, 0)),
+            (PORT_A, 3) => Some((0x0b, 2)),
+            (PORT_A, 4) => Some((0x0b, 4)),
+            (PORT_A, 5) => Some((0x0b, 6)),
+            (PORT_A, 6) => Some((0x0c, 0)),
+            (PORT_A, 7) => Some((0x0c, 2)),
+            (PORT_B, 0) => Some((0x0c, 4)),
+            (PORT_B, 1) => Some((0x0c, 6)),
+            (PORT_B, 2) => Some((0x0d, 0)),
+            (PORT_B, 3) => Some((0x0d, 2)),
+            (PORT_B, 4) => Some((0x0d, 4)),
+            (PORT_B, 5) => Some((0x0d, 6)),
+            (PORT_B, 6) => Some((0x0e, 0)),
+            (PORT_B, 7) => Some((0x0e, 2)),
+            (PORT_C, 0) => Some((0x0e, 4)),
+            (PORT_C, 1) => Some((0x0e, 6)),
+            (PORT_C, 2) => Some((0x0f, 0)),
+            (PORT_C, 3) => Some((0x0f, 2)),
+            (PORT_C, 4) => Some((0x0f, 4)),
+            (PORT_C, 5) => Some((0x0f, 6)),
+            (PORT_C, 6) => Some((0x10, 0)),
+            (PORT_C, 7) => Some((0x10, 2)),
+            (PORT_D, 0) => Some((0x10, 4)),
+            (PORT_D, 1) => Some((0x10, 6)),
+            (PORT_D, 2) => Some((0x11, 0)),
+            (PORT_D, 3) => Some((0x11, 2)),
+            (PORT_D, 4) => Some((0x11, 4)),
+            (PORT_D, 5) => Some((0x11, 6)),
+            (PORT_D, 6) => Some((0x12, 0)),
+            (PORT_D, 7) => Some((0x12, 2)),
+            (PORT_E, 0) => Some((0x12, 4)),
+            (PORT_E, 1) => Some((0x12, 6)),
+            (PORT_E, 2) => Some((0x08, 4)),
+            (PORT_E, 3) => Some((0x08, 6)),
+            _ => None,
+        };
+    }
+
+    #[allow(unreachable_code)]
+    None
 }
 
 impl<const PORT: u8, const BIT: u8> Pin<PORT, BIT, Output> {

@@ -1,13 +1,9 @@
 use core::fmt;
 
-use crate::pac;
+use crate::{analog, gpio, gpio::PinFunction, pac};
 
 const RESET_BASE: usize = 0x0080_0060;
 const UART_BASE: usize = 0x0080_0090;
-
-unsafe extern "C" {
-    fn uart_gpio_set(tx_pin: u32, rx_pin: u32);
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Parity {
@@ -69,7 +65,6 @@ impl Pins {
     pub const PB1_PA0: Self = Self::new(TxPin::Pb1, RxPin::Pa0);
     pub const PB1_PB0: Self = Self::new(TxPin::Pb1, RxPin::Pb0);
     pub const PC2_PC3: Self = Self::new(TxPin::Pc2, RxPin::Pc3);
-    pub const PD0_PD6: Self = Self::new(TxPin::Pd0, RxPin::Pd6);
 }
 
 impl Config {
@@ -221,11 +216,12 @@ impl fmt::Write for Uart {
 }
 
 pub fn apply_pins(pins: Pins) {
-    unsafe {
-        // The 8258/8278 SDK configures TX and RX pins independently, so any
-        // listed TxPin/RxPin combination is accepted by the vendor driver.
-        uart_gpio_set(pins.tx as u32, pins.rx as u32);
-    }
+    gpio::set_pull_resistor_raw(pins.tx as u16, analog::Pull::PullUp10K);
+    gpio::set_pull_resistor_raw(pins.rx as u16, analog::Pull::PullUp10K);
+    gpio::set_function_raw(pins.tx as u16, PinFunction::Uart);
+    gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
+    gpio::set_input_enabled_raw(pins.tx as u16, true);
+    gpio::set_input_enabled_raw(pins.rx as u16, true);
 }
 
 fn compute_baud_params(sysclk_hz: u32, baudrate: u32) -> (u16, u8) {
