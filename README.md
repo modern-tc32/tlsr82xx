@@ -27,4 +27,5 @@ python3 tlsr82xx-pac/scripts/gen_pac.py \
   --out-dir tlsr82xx-pac/generated
 ```
 
-This command expects `svd2rust` and `form` to be installed locally.
+By default the wrapper uses `../svd2rust-aarch64-apple-darwin` and target
+`none`, so no PATH setup is required for `svd2rust` in this repository.

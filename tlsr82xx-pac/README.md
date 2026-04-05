@@ -8,3 +8,6 @@ This crate currently hosts:
 - `scripts/gen_pac.py`: wrapper around `svd2rust` for generating PAC sources.
 - `svd/`: generated SVD inputs for future PAC generation.
 - `generated/`: output tree for per-chip generated PAC sources.
+
+`gen_pac.py` defaults to the local binary `../svd2rust-aarch64-apple-darwin`
+from the workspace root.

@@ -11,10 +11,18 @@ from pathlib import Path
 SUPPORTED_CHIPS = ("8258", "8278", "826x")
 
 
-def require_tool(name: str) -> str:
-    path = shutil.which(name)
+def default_svd2rust_path() -> Path:
+    # Repository layout: tlsr82xx/tlsr82xx-pac/scripts/gen_pac.py
+    return Path(__file__).resolve().parents[3] / "svd2rust-aarch64-apple-darwin"
+
+
+def require_tool(path_or_name: str) -> str:
+    candidate = Path(path_or_name)
+    if candidate.exists():
+        return str(candidate.resolve())
+    path = shutil.which(path_or_name)
     if path is None:
-        raise RuntimeError(f"required tool not found in PATH: {name}")
+        raise RuntimeError(f"required tool not found: {path_or_name}")
     return path
 
 
@@ -22,9 +30,14 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
-def generate_pac(chip: str, svd_path: Path, out_dir: Path) -> Path:
-    require_tool("svd2rust")
-    require_tool("form")
+def generate_pac(
+    chip: str,
+    svd_path: Path,
+    out_dir: Path,
+    svd2rust_bin: str,
+    target: str,
+) -> Path:
+    svd2rust = require_tool(svd2rust_bin)
 
     work_dir = out_dir / chip
     src_dir = work_dir / "src"
@@ -32,25 +45,24 @@ def generate_pac(chip: str, svd_path: Path, out_dir: Path) -> Path:
 
     run(
         [
-            "svd2rust",
-            "--input",
+            svd2rust,
+            "-i",
             str(svd_path),
+            "--output-dir",
+            str(src_dir),
             "--target",
-            "generic",
+            target,
+            "--make-mod",
+            "--generic-mod",
+            "--edition",
+            "2021",
         ],
         cwd=work_dir,
     )
 
-    lib_rs = work_dir / "lib.rs"
-    if not lib_rs.exists():
-        raise RuntimeError(f"svd2rust did not produce {lib_rs}")
-
-    run(["form", "-i", "lib.rs", "-o", "src/"], cwd=work_dir)
-
-    mod_rs = src_dir / "lib.rs"
-    if mod_rs.exists():
-        mod_rs.unlink()
-    lib_rs.rename(mod_rs)
+    mod_rs = src_dir / "mod.rs"
+    if not mod_rs.exists():
+        raise RuntimeError(f"svd2rust did not produce {mod_rs}")
 
     cargo_toml = work_dir / "Cargo.toml"
     cargo_toml.write_text(
@@ -84,6 +96,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--chip", required=True, choices=SUPPORTED_CHIPS)
     parser.add_argument("--svd", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument(
+        "--svd2rust-bin",
+        default=str(default_svd2rust_path()),
+        help="Path to svd2rust binary",
+    )
+    parser.add_argument(
+        "--target",
+        default="none",
+        choices=("none", "cortex-m", "msp430", "riscv", "xtensa-lx", "mips"),
+        help="svd2rust target backend",
+    )
     return parser.parse_args()
 
 
@@ -97,7 +120,13 @@ def main() -> int:
         return 2
 
     try:
-        work_dir = generate_pac(args.chip, svd_path, out_dir)
+        work_dir = generate_pac(
+            args.chip,
+            svd_path,
+            out_dir,
+            args.svd2rust_bin,
+            args.target,
+        )
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -1,0 +1,14 @@
+[package]
+name = "tlsr82xx-pac-8258"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+critical-section = { version = "1", optional = true }
+vcell = "0.1.3"
+
+[features]
+default = []
+
