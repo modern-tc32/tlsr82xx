@@ -1,4 +1,4 @@
-.PHONY: all help debug release rgb-debug rgb-release bin bin-release clean check-env
+.PHONY: all help debug release rgb-debug rgb-release uart-debug uart-release bin bin-release clean check-env
 
 TARGET := tc32-unknown-none-elf
 PROFILE ?= debug
@@ -15,6 +15,10 @@ RGB_ELF_debug := $(TARGET_DIR)/debug/rgb8258
 RGB_ELF_release := $(TARGET_DIR)/release/rgb8258
 RGB_BIN_debug := $(RGB_ELF_debug).bin
 RGB_BIN_release := $(RGB_ELF_release).bin
+UART_ELF_debug := $(TARGET_DIR)/debug/uart8258
+UART_ELF_release := $(TARGET_DIR)/release/uart8258
+UART_BIN_debug := $(UART_ELF_debug).bin
+UART_BIN_release := $(UART_ELF_release).bin
 
 all: debug
 
@@ -24,6 +28,8 @@ help:
 	@echo "  make release      Build release ELF and tlsr82xx-blink8258.bin"
 	@echo "  make rgb-debug    Build debug ELF and rgb8258.bin"
 	@echo "  make rgb-release  Build release ELF and rgb8258.bin"
+	@echo "  make uart-debug   Build debug ELF and uart8258.bin"
+	@echo "  make uart-release Build release ELF and uart8258.bin"
 	@echo "  make bin          Alias for debug"
 	@echo "  make bin-release  Alias for release"
 	@echo "  make clean        Remove example build outputs"
@@ -63,6 +69,14 @@ rgb-release: $(RGB_BIN_release)
 	@echo "ELF: $(RGB_ELF_release)"
 	@echo "BIN: $(RGB_BIN_release)"
 
+uart-debug: $(UART_BIN_debug)
+	@echo "ELF: $(UART_ELF_debug)"
+	@echo "BIN: $(UART_BIN_debug)"
+
+uart-release: $(UART_BIN_release)
+	@echo "ELF: $(UART_ELF_release)"
+	@echo "BIN: $(UART_BIN_release)"
+
 bin: debug
 
 bin-release: release
@@ -91,6 +105,18 @@ $(RGB_ELF_release): check-env
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \
 	"$(TC32_CARGO)" build --release --bin rgb8258
 
+$(UART_ELF_debug): check-env
+	RUSTC="$(TC32_RUSTC)" \
+	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
+	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \
+	"$(TC32_CARGO)" build --bin uart8258
+
+$(UART_ELF_release): check-env
+	RUSTC="$(TC32_RUSTC)" \
+	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
+	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \
+	"$(TC32_CARGO)" build --release --bin uart8258
+
 $(BIN_debug): $(ELF_debug)
 	"$(TC32_LLVM_BIN)/llvm-objcopy" -O binary "$(ELF_debug)" "$(BIN_debug)"
 
@@ -102,6 +128,12 @@ $(RGB_BIN_debug): $(RGB_ELF_debug)
 
 $(RGB_BIN_release): $(RGB_ELF_release)
 	"$(TC32_LLVM_BIN)/llvm-objcopy" -O binary "$(RGB_ELF_release)" "$(RGB_BIN_release)"
+
+$(UART_BIN_debug): $(UART_ELF_debug)
+	"$(TC32_LLVM_BIN)/llvm-objcopy" -O binary "$(UART_ELF_debug)" "$(UART_BIN_debug)"
+
+$(UART_BIN_release): $(UART_ELF_release)
+	"$(TC32_LLVM_BIN)/llvm-objcopy" -O binary "$(UART_ELF_release)" "$(UART_BIN_release)"
 
 clean:
 	"$(TC32_CARGO)" clean

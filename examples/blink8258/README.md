@@ -20,6 +20,7 @@ The example uses:
 Additional binary:
 
 - `rgb8258` drives `LED_R`/`LED_G`/`LED_B` on `PC2`/`PC3`/`PC4` with hardware PWM
+- `uart8258` writes a periodic banner on UART TX `PB1` with RX mapped to `PA0`
 
 ## Prepare toolchain
 
@@ -63,6 +64,12 @@ Build the RGB PWM binary directly:
 
 ```sh
 make rgb-release
+```
+
+Build the UART binary directly:
+
+```sh
+make uart-release
 ```
 
 Outputs:
