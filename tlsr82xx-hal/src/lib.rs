@@ -16,6 +16,8 @@ pub use tlsr82xx_pac as pac;
 pub mod analog;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod clock;
+#[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+pub mod flash;
 pub mod gpio;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod interrupt;
