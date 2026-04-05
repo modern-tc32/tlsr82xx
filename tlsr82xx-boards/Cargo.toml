@@ -1,0 +1,18 @@
+[package]
+name = "tlsr82xx-boards"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = []
+chip-8258 = ["tlsr82xx-hal/chip-8258"]
+chip-8278 = ["tlsr82xx-hal/chip-8278"]
+chip-826x = ["tlsr82xx-hal/chip-826x"]
+
+[dependencies]
+tlsr82xx-hal = { path = "../tlsr82xx-hal" }
+
+[lib]
+path = "src/lib.rs"

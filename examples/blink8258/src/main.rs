@@ -4,14 +4,19 @@
 use core::panic::PanicInfo;
 
 use embedded_hal::digital::OutputPin;
+use tlsr82xx_boards::tb03f::Board;
+use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
 
-mod board;
 mod platform;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    let mut board = board::init();
+    unsafe {
+        let _ = platform::drv_platform_init();
+    }
+
+    let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
     let mut tick = timer::clock_time();
     let mut led_y_on = true;
 
