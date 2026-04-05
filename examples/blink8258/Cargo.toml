@@ -1,0 +1,13 @@
+[package]
+name = "tlsr82xx-blink8258"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[features]
+default = []
+
+[dependencies]
+embedded-hal = { path = "../../../hal_examples/embedded-hal/embedded-hal" }
+tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }

@@ -1,0 +1,122 @@
+ENTRY(__start)
+
+PHDRS
+{
+    flash PT_LOAD FLAGS(5);
+    data PT_LOAD FLAGS(6);
+    sdk PT_LOAD FLAGS(6);
+    bss PT_LOAD FLAGS(6);
+    stack PT_GNU_STACK FLAGS(7);
+}
+
+SECTIONS
+{
+    . = 0x0;
+    .vectors :
+    {
+        *(.vectors)
+        *(.vectors.*)
+    } :flash
+
+    . = (. * (1 - __BOOT_LOADER_IMAGE)) + (__FW_RAMCODE_SIZE_MAX * __BOOT_LOADER_IMAGE);
+    .ram_code :
+    {
+        *(.ram_code)
+        *(.ram_code.*)
+    } :flash
+
+    . = ALIGN(16);
+    PROVIDE(_rstored_ = .);
+    PROVIDE(_ramcode_size_ = .);
+    PROVIDE(_ramcode_size_div_16_ = (. + 15) / 16);
+    PROVIDE(_ramcode_size_div_256_ = (. + 255) / 256);
+    PROVIDE(_ramcode_size_div_16_align_256_ = ((. + 255) / 256) * 16);
+    PROVIDE(_ramcode_size_align_256_ = ((. + 255) / 256) * 256);
+
+    . = (_rstored_ + __FW_OFFSET);
+    .text :
+        AT(_rstored_)
+    {
+        *(.text)
+        *(.text.*)
+    } :flash
+
+    .rodata :
+    {
+        *(.rodata)
+        *(.rodata.*)
+    } :flash
+
+    . = ALIGN(4);
+    PROVIDE(_dstored_ = .);
+    PROVIDE(_dstored_bin_ = . - __FW_OFFSET);
+    PROVIDE(_code_size_ = . - __FW_OFFSET);
+
+    . = 0x840900 + _ramcode_size_align_256_;
+    .data :
+        AT(_dstored_bin_)
+    {
+        . = ALIGN(4);
+        PROVIDE(_start_data_ = .);
+        *(.data)
+        *(.data.*)
+        . = ALIGN(4);
+        PROVIDE(_end_data_ = .);
+    } :data
+
+    . = ADDR(.data) + SIZEOF(.data);
+    .bss (NOLOAD) :
+    {
+        . = ALIGN(4);
+        PROVIDE(_start_bss_ = .);
+        *(.sbss)
+        *(.sbss.*)
+        *(.bss)
+        *(.bss.*)
+        *(COMMON)
+        . = ALIGN(4);
+        PROVIDE(_end_bss_ = .);
+    } :bss
+
+    . = ALIGN(4);
+    PROVIDE(_custom_stored_ = _dstored_ + SIZEOF(.data));
+    PROVIDE(_custom_stored_bin_ = _dstored_bin_ + SIZEOF(.data));
+
+    .custom_data :
+        AT(_custom_stored_bin_)
+    {
+        PROVIDE(_start_custom_data_ = .);
+        *(.custom_data)
+        *(.custom_data.*)
+        PROVIDE(_end_custom_data_ = .);
+    } :data
+
+    .custom_bss (NOLOAD) :
+    {
+        PROVIDE(_start_custom_bss_ = .);
+        *(.custom_bss)
+        *(.custom_bss.*)
+        PROVIDE(_end_custom_bss_ = .);
+    } :bss
+
+    .sdk_version :
+        AT(_custom_stored_bin_ + SIZEOF(.custom_data))
+    {
+        KEEP(*(.sdk_version))
+        KEEP(*(.sdk_version.*))
+    } :sdk
+
+    .TC32.attributes 0 :
+    {
+        *(.TC32.attributes)
+    }
+
+    PROVIDE(_bin_size_ = _code_size_ + SIZEOF(.data) + SIZEOF(.custom_data) + SIZEOF(.sdk_version));
+    PROVIDE(_bin_size_div_16 = (_bin_size_ + 15) / 16);
+    PROVIDE(_ictag_start_ = 0x840000 + _ramcode_size_align_256_);
+    PROVIDE(_ictag_end_ = 0x840000 + _ramcode_size_align_256_ + 0x100);
+    PROVIDE(_stack_end_ = 0x850000);
+    PROVIDE(_ram_end_ = (((_end_custom_bss_ + SIZEOF(.sdk_version) + 0x800) + 255) / 256) * 256);
+
+    ASSERT((_ram_end_ < _stack_end_), "STACK OVERFLOW")
+}

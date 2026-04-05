@@ -1,0 +1,2 @@
+[build]
+target = "tc32-unknown-none-elf"

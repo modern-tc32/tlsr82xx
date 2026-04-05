@@ -12,6 +12,7 @@ chip-8278 = ["tlsr82xx-pac/chip-8278"]
 chip-826x = ["tlsr82xx-pac/chip-826x"]
 
 [dependencies]
+embedded-hal = { path = "../../hal_examples/embedded-hal/embedded-hal" }
 tlsr82xx-pac = { path = "../tlsr82xx-pac" }
 
 [lib]
