@@ -5,6 +5,10 @@ use crate::pac;
 const RESET_BASE: usize = 0x0080_0060;
 const UART_BASE: usize = 0x0080_0090;
 
+unsafe extern "C" {
+    fn uart_gpio_set(tx_pin: u32, rx_pin: u32);
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Parity {
     None,
@@ -26,6 +30,28 @@ pub struct Config {
     pub sysclk_hz: u32,
     pub parity: Parity,
     pub stop_bits: StopBits,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum TxPin {
+    Pa2 = 0x0004,
+    Pb1 = 0x0102,
+    Pc2 = 0x0204,
+    Pd0 = 0x0301,
+    Pd3 = 0x0308,
+    Pd7 = 0x0380,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum RxPin {
+    Pa0 = 0x0001,
+    Pb0 = 0x0101,
+    Pb7 = 0x0180,
+    Pc3 = 0x0208,
+    Pc5 = 0x0220,
+    Pd6 = 0x0340,
 }
 
 impl Config {
@@ -173,6 +199,12 @@ impl fmt::Write for Uart {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_bytes(s.as_bytes());
         Ok(())
+    }
+}
+
+pub fn apply_pins(tx: TxPin, rx: RxPin) {
+    unsafe {
+        uart_gpio_set(tx as u32, rx as u32);
     }
 }
 

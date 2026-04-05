@@ -3,6 +3,7 @@
 
 use core::panic::PanicInfo;
 
+use tlsr82xx_hal::gpio::{GpioExt, PinFunction};
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::pwm::{Channel, PwmExt};
 use tlsr82xx_hal::timer;
@@ -10,18 +11,8 @@ use tlsr82xx_hal::timer;
 #[path = "../platform.rs"]
 mod platform;
 
-const GPIO_PC2: u32 = 0x0204;
-const GPIO_PC3: u32 = 0x0208;
-const GPIO_PC4: u32 = 0x0210;
-const AS_PWM0: u32 = 20;
-const AS_PWM1: u32 = 21;
-const AS_PWM2: u32 = 22;
 const PWM_PERIOD_TICKS: u16 = 48_000;
 const BRIGHTNESS_MAX: u16 = 255;
-
-unsafe extern "C" {
-    fn gpio_set_func(pin: u32, func: u32);
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
@@ -29,13 +20,11 @@ pub extern "C" fn main() -> i32 {
         let _ = platform::drv_platform_init();
     }
 
-    unsafe {
-        gpio_set_func(GPIO_PC2, AS_PWM0);
-        gpio_set_func(GPIO_PC3, AS_PWM1);
-        gpio_set_func(GPIO_PC4, AS_PWM2);
-    }
-
     let peripherals = unsafe { pac::Peripherals::steal() };
+    let mut pins = peripherals.gpio.split();
+    pins.pc2.set_function(PinFunction::Pwm0);
+    pins.pc3.set_function(PinFunction::Pwm1);
+    pins.pc4.set_function(PinFunction::Pwm2);
     let mut pwm = peripherals.pwm.constrain();
     pwm.configure(Channel::Pwm0, PWM_PERIOD_TICKS, 0);
     pwm.configure(Channel::Pwm1, PWM_PERIOD_TICKS, 0);

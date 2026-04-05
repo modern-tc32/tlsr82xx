@@ -6,24 +6,17 @@ use core::panic::PanicInfo;
 
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
-use tlsr82xx_hal::uart::{Config, UartExt};
+use tlsr82xx_hal::uart::{apply_pins, Config, RxPin, TxPin, UartExt};
 
 #[path = "../platform.rs"]
 mod platform;
-
-const UART_TX_PB1: u32 = 0x0102;
-const UART_RX_PA0: u32 = 0x0001;
-
-unsafe extern "C" {
-    fn uart_gpio_set(tx_pin: u32, rx_pin: u32);
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     unsafe {
         let _ = platform::drv_platform_init();
-        uart_gpio_set(UART_TX_PB1, UART_RX_PA0);
     }
+    apply_pins(TxPin::Pb1, RxPin::Pa0);
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut uart = peripherals.uart.constrain();

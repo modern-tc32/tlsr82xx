@@ -17,6 +17,10 @@ const PORT_E: u8 = 4;
 const GPIO_BASE: usize = 0x0080_0580;
 const IRQ_BASE: usize = 0x0080_0640;
 
+unsafe extern "C" {
+    fn gpio_set_func(pin: u32, func: u32);
+}
+
 pub struct Input;
 pub struct Output;
 
@@ -30,6 +34,19 @@ pub enum Level {
 pub enum DriveStrength {
     Weak,
     Strong,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum PinFunction {
+    Gpio = 0,
+    Uart = 3,
+    Pwm0 = 20,
+    Pwm1 = 21,
+    Pwm2 = 22,
+    Pwm3 = 23,
+    Pwm4 = 24,
+    Pwm5 = 25,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -195,6 +212,12 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     #[inline(always)]
     pub const fn raw_pin() -> u16 {
         ((PORT as u16) << 8) | Self::mask() as u16
+    }
+
+    pub fn set_function(&mut self, function: PinFunction) {
+        unsafe {
+            gpio_set_func(u32::from(Self::raw_pin()), function as u32);
+        }
     }
 
     #[inline(always)]
