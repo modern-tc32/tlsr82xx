@@ -17,6 +17,14 @@ name = "tlsr82xx-blink8258"
 version = "0.1.0"
 dependencies = [
  "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
+name = "tlsr82xx-boards"
+version = "0.1.0"
+dependencies = [
  "tlsr82xx-hal",
 ]
 

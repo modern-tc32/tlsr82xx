@@ -4,9 +4,10 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use tlsr82xx_boards::tb03f;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
-use tlsr82xx_hal::uart::{apply_pins, Config, RxPin, TxPin, UartExt};
+use tlsr82xx_hal::uart::{Config, UartExt};
 
 #[path = "../platform.rs"]
 mod platform;
@@ -16,7 +17,7 @@ pub extern "C" fn main() -> i32 {
     unsafe {
         let _ = platform::drv_platform_init();
     }
-    apply_pins(TxPin::Pb1, RxPin::Pa0);
+    tb03f::configure_uart_pins();
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut uart = peripherals.uart.constrain();

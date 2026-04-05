@@ -3,7 +3,8 @@
 
 use core::panic::PanicInfo;
 
-use tlsr82xx_hal::gpio::{GpioExt, PinFunction};
+use tlsr82xx_boards::tb03f;
+use tlsr82xx_hal::gpio::GpioExt;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::pwm::{Channel, PwmExt};
 use tlsr82xx_hal::timer;
@@ -22,9 +23,7 @@ pub extern "C" fn main() -> i32 {
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut pins = peripherals.gpio.split();
-    pins.pc2.set_function(PinFunction::Pwm0);
-    pins.pc3.set_function(PinFunction::Pwm1);
-    pins.pc4.set_function(PinFunction::Pwm2);
+    tb03f::configure_rgb_pins(&mut pins);
     let mut pwm = peripherals.pwm.constrain();
     pwm.configure(Channel::Pwm0, PWM_PERIOD_TICKS, 0);
     pwm.configure(Channel::Pwm1, PWM_PERIOD_TICKS, 0);

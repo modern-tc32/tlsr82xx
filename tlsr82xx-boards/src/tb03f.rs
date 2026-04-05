@@ -1,8 +1,9 @@
 use tlsr82xx_hal::analog::Pull;
 use tlsr82xx_hal::gpio::{
-    DriveStrength, GpioExt, Input, Level, Output, PA7, PB4, PB5, PD2, Pins,
+    DriveStrength, GpioExt, Input, Level, Output, PinFunction, PA7, PB4, PB5, PD2, Pins,
 };
 use tlsr82xx_hal::pac;
+use tlsr82xx_hal::uart::{self, RxPin, TxPin};
 
 pub struct Board {
     pub led_y: PB4<Output>,
@@ -42,4 +43,14 @@ impl Board {
     pub fn button2_pressed(&self) -> bool {
         self.button2.is_low()
     }
+}
+
+pub fn configure_rgb_pins(pins: &mut Pins) {
+    pins.pc2.set_function(PinFunction::Pwm0);
+    pins.pc3.set_function(PinFunction::Pwm1);
+    pins.pc4.set_function(PinFunction::Pwm2);
+}
+
+pub fn configure_uart_pins() {
+    uart::apply_pins(TxPin::Pb1, RxPin::Pa0);
 }
