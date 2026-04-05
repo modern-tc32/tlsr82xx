@@ -691,13 +691,13 @@
       </registers>
     </peripheral>
     <peripheral>
-      <name>_7816</name>
+      <name>N_7816</name>
       <description>Auto-generated from section '7816'</description>
       <baseAddress>0x80007b</baseAddress>
       <registers>
         <register>
-          <name>_7816_CLK_DIV</name>
-          <description>Auto-generated from _7816_clk_div</description>
+          <name>N_7816_CLK_DIV</name>
+          <description>Auto-generated from n_7816_clk_div</description>
           <addressOffset>0x0</addressOffset>
           <size>8</size>
         </register>
@@ -1562,38 +1562,6 @@
           <description>Auto-generated from usb_ep7_ctrl</description>
           <addressOffset>0x27</addressOffset>
           <size>8</size>
-          <fields>
-            <field>
-              <name>FLD_USB_EP_BUSY</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>FLD_USB_EP_STALL</name>
-              <bitOffset>1</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>FLD_USB_EP_DAT0</name>
-              <bitOffset>2</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>FLD_USB_EP_DAT1</name>
-              <bitOffset>3</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>FLD_USB_EP_MONO</name>
-              <bitOffset>6</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>FLD_USB_EP_EOF_ISO</name>
-              <bitOffset>7</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-          </fields>
         </register>
         <register>
           <name>USB_EP8123_BUF_ADDR</name>
@@ -2802,18 +2770,6 @@
           <description>Auto-generated from pwm_pol</description>
           <addressOffset>0x6</addressOffset>
           <size>8</size>
-          <fields>
-            <field>
-              <name>FLD_PWM_CMP</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>16</bitWidth>
-            </field>
-            <field>
-              <name>FLD_PWM_MAX</name>
-              <bitOffset>16</bitOffset>
-              <bitWidth>16</bitWidth>
-            </field>
-          </fields>
         </register>
         <register>
           <name>PWM0_PULSE_NUM</name>

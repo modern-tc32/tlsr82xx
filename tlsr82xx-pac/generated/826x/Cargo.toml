@@ -1,5 +1,5 @@
 [package]
-name = "tlsr82xx-pac-8258"
+name = "tlsr82xx-pac-826x"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"

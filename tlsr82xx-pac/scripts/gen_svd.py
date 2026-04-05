@@ -143,7 +143,7 @@ def sanitize_identifier(value: str) -> str:
     if not value:
         return "UNNAMED"
     if value[0].isdigit():
-        value = f"_{value}"
+        value = f"N_{value}"
     return value
 
 
@@ -270,6 +270,16 @@ def parse_registers(register_h: Path, evaluator: ExpressionEvaluator) -> List[Re
             )
             registers.append(register)
             last_register = register
+            i += 1
+            continue
+
+        if re.match(r"^\s*#define\s+reg_[A-Za-z0-9_]+\s*\(", line):
+            last_register = None
+            i += 1
+            continue
+
+        define_match = DEFINE_RE.match(line)
+        if define_match:
             i += 1
             continue
 

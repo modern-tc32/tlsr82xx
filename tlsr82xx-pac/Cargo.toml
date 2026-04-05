@@ -5,6 +5,16 @@ edition = "2021"
 license = "Apache-2.0"
 publish = false
 
+[features]
+default = []
+chip-8258 = ["dep:tlsr82xx-pac-8258"]
+chip-8278 = ["dep:tlsr82xx-pac-8278"]
+chip-826x = ["dep:tlsr82xx-pac-826x"]
+
+[dependencies]
+tlsr82xx-pac-8258 = { path = "generated/8258", optional = true }
+tlsr82xx-pac-8278 = { path = "generated/8278", optional = true }
+tlsr82xx-pac-826x = { path = "generated/826x", optional = true }
+
 [lib]
 path = "src/lib.rs"
-

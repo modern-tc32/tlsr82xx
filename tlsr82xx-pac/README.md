@@ -11,3 +11,6 @@ This crate currently hosts:
 
 `gen_pac.py` defaults to the local binary `../svd2rust-aarch64-apple-darwin`
 from the workspace root.
+
+The top-level `tlsr82xx-pac` crate is a facade that reexports one generated
+per-chip PAC selected by feature.

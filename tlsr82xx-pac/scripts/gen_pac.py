@@ -30,6 +30,24 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def patch_generated_lib_rs(lib_rs: Path) -> None:
+    text = lib_rs.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    insert_at = 0
+    while insert_at < len(lines) and lines[insert_at].lstrip().startswith("#"):
+        insert_at += 1
+
+    attrs = ["#![no_std]"] + lines[:insert_at]
+    items: list[str] = []
+    if "pub mod generic;" not in text:
+        items.append("pub mod generic;")
+    if "pub use generic::*;" not in text:
+        items.append("pub use generic::*;")
+
+    new_lines = attrs + items + lines[insert_at:]
+    lib_rs.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
 def generate_pac(
     chip: str,
     svd_path: Path,
@@ -63,6 +81,11 @@ def generate_pac(
     mod_rs = src_dir / "mod.rs"
     if not mod_rs.exists():
         raise RuntimeError(f"svd2rust did not produce {mod_rs}")
+    lib_rs = src_dir / "lib.rs"
+    if lib_rs.exists():
+        lib_rs.unlink()
+    mod_rs.rename(lib_rs)
+    patch_generated_lib_rs(lib_rs)
 
     cargo_toml = work_dir / "Cargo.toml"
     cargo_toml.write_text(
@@ -75,12 +98,16 @@ def generate_pac(
                 'license = "Apache-2.0"',
                 'publish = false',
                 "",
+                "[lib]",
+                'path = "src/lib.rs"',
+                "",
                 "[dependencies]",
                 'critical-section = { version = "1", optional = true }',
                 'vcell = "0.1.3"',
                 "",
                 "[features]",
                 'default = []',
+                'critical-section = ["dep:critical-section"]',
                 "",
             ]
         )
