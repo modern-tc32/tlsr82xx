@@ -19,6 +19,18 @@ const GPIO_BASE: usize = 0x0080_0580;
 pub struct Input;
 pub struct Output;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Level {
+    Low,
+    High,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DriveStrength {
+    Weak,
+    Strong,
+}
+
 pub struct Pin<const PORT: u8, const BIT: u8, MODE> {
     _mode: PhantomData<MODE>,
 }
@@ -167,6 +179,11 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     #[inline(always)]
+    pub const fn raw_pin() -> u16 {
+        ((PORT as u16) << 8) | Self::mask() as u16
+    }
+
+    #[inline(always)]
     const fn reg(offset: usize) -> *mut u8 {
         (GPIO_BASE + ((PORT as usize) << 3) + offset) as *mut u8
     }
@@ -212,6 +229,11 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     #[inline(always)]
+    fn set_drive_strength_raw(strong: bool) {
+        Self::modify_reg(0x05, strong);
+    }
+
+    #[inline(always)]
     fn read_input_level() -> bool {
         (Self::read_reg(0x00) & Self::mask()) != 0
     }
@@ -229,10 +251,19 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     pub fn into_output(self) -> Pin<PORT, BIT, Output> {
+        self.into_output_with_state(Level::Low)
+    }
+
+    pub fn into_output_with_state(self, initial: Level) -> Pin<PORT, BIT, Output> {
         Self::configure_as_gpio();
+        Self::write_data(matches!(initial, Level::High));
         Self::set_input_enabled(false);
         Self::set_output_enabled(true);
         Pin::new()
+    }
+
+    pub fn set_drive_strength(&mut self, strength: DriveStrength) {
+        Self::set_drive_strength_raw(matches!(strength, DriveStrength::Strong));
     }
 }
 

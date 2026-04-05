@@ -4,7 +4,7 @@
 use core::panic::PanicInfo;
 
 use embedded_hal::digital::OutputPin;
-use tlsr82xx_hal::gpio::GpioExt;
+use tlsr82xx_hal::gpio::{DriveStrength, GpioExt, Level};
 use tlsr82xx_hal::pac;
 
 mod platform;
@@ -18,13 +18,13 @@ pub extern "C" fn main() -> i32 {
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let pins = peripherals.gpio.split();
-    let mut led_y = pins.pb4.into_output();
-    let mut led_w = pins.pb5.into_output();
+    let mut led_y = pins.pb4.into_output_with_state(Level::High);
+    let mut led_w = pins.pb5.into_output_with_state(Level::Low);
     let mut tick = time::clock_time();
     let mut led_y_on = true;
 
-    drive_pin(&mut led_y, true);
-    drive_pin(&mut led_w, false);
+    led_y.set_drive_strength(DriveStrength::Strong);
+    led_w.set_drive_strength(DriveStrength::Strong);
 
     loop {
         if time::clock_time_exceed(tick, 500_000) {
