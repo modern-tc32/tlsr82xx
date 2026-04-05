@@ -206,3 +206,11 @@ pub fn read_mid() -> u32 {
     // IDs can be added later if needed.
     read_raw_mid()
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn flash_is_zb() -> u8 {
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn flash_vdd_f_calib() {}
