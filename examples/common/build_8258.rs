@@ -76,7 +76,6 @@ fn main() {
     let sources = [
         sdk_dir.join("platform/boot/link_cfg.S"),
         clang_compat_dir.join("mulsi3.c"),
-        sdk_dir.join("platform/chip_8258/adc.c"),
         sdk_dir.join("platform/chip_8258/flash.c"),
         sdk_dir.join("platform/chip_8258/flash/flash_common.c"),
         sdk_dir.join("platform/chip_8258/flash/flash_mid011460c8.c"),
@@ -88,6 +87,7 @@ fn main() {
         sdk_dir.join("platform/chip_8258/flash/flash_mid1360eb.c"),
         sdk_dir.join("platform/chip_8258/flash/flash_mid14325e.c"),
         sdk_dir.join("platform/chip_8258/flash/flash_mid1460c8.c"),
+        common_dir.join("support/adc_shim.c"),
         common_dir.join("support/irq_handler_stub.c"),
         common_dir.join("support/platform_init.c"),
         common_dir.join("support/platform_stubs.c"),
