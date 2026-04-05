@@ -4,15 +4,15 @@
 use core::panic::PanicInfo;
 
 use embedded_hal::digital::OutputPin;
+use tlsr82xx_hal::timer;
 
 mod board;
 mod platform;
-mod time;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     let mut board = board::init();
-    let mut tick = time::clock_time();
+    let mut tick = timer::clock_time();
     let mut led_y_on = true;
 
     loop {
@@ -28,8 +28,8 @@ pub extern "C" fn main() -> i32 {
             continue;
         }
 
-        if time::clock_time_exceed(tick, 500_000) {
-            tick = time::clock_time();
+        if timer::clock_time_exceed_us(tick, 500_000) {
+            tick = timer::clock_time();
             led_y_on = !led_y_on;
             if led_y_on {
                 drive_pin(&mut board.led_y, true);

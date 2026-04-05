@@ -15,3 +15,4 @@ pub use tlsr82xx_pac as pac;
 
 pub mod analog;
 pub mod gpio;
+pub mod timer;
