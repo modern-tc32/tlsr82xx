@@ -1561,6 +1561,38 @@
           <description>Auto-generated from usb_ep7_ctrl</description>
           <addressOffset>0x27</addressOffset>
           <size>8</size>
+          <fields>
+            <field>
+              <name>FLD_USB_EP_BUSY</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FLD_USB_EP_STALL</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FLD_USB_EP_DAT0</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FLD_USB_EP_DAT1</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FLD_USB_EP_MONO</name>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FLD_USB_EP_EOF_ISO</name>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>USB_EP8123_BUF_ADDR</name>
@@ -2540,12 +2572,6 @@
           <description>Auto-generated from irq_src</description>
           <addressOffset>0x8</addressOffset>
           <size>32</size>
-        </register>
-        <register>
-          <name>IRQ_SRC3</name>
-          <description>Auto-generated from irq_src3</description>
-          <addressOffset>0xa</addressOffset>
-          <size>8</size>
           <fields>
             <field>
               <name>FLD_IRQ_TMR0_EN</name>
@@ -2678,6 +2704,12 @@
               <bitWidth>8</bitWidth>
             </field>
           </fields>
+        </register>
+        <register>
+          <name>IRQ_SRC3</name>
+          <description>Auto-generated from irq_src3</description>
+          <addressOffset>0xa</addressOffset>
+          <size>8</size>
         </register>
       </registers>
     </peripheral>

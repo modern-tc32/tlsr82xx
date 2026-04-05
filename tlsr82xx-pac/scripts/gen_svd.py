@@ -291,15 +291,35 @@ def parse_registers(register_h: Path, evaluator: ExpressionEvaluator) -> List[Re
                 if "};" in lines[i] or "}" in lines[i]:
                     break
                 i += 1
-            if last_register is not None:
-                fields = parse_enum_fields("\n".join(enum_lines), evaluator)
-                if fields:
-                    last_register.fields.extend(fields)
+            fields = parse_enum_fields("\n".join(enum_lines), evaluator)
+            if fields:
+                target = select_enum_target(registers, current_section, last_register, fields)
+                if target is not None:
+                    target.fields.extend(fields)
             i += 1
             continue
 
         i += 1
     return registers
+
+
+def select_enum_target(
+    registers: List[RegisterDef],
+    current_section: str,
+    last_register: Optional[RegisterDef],
+    fields: List[FieldDef],
+) -> Optional[RegisterDef]:
+    max_bit = max(field.bit_offset + field.bit_width for field in fields)
+    if last_register is not None and max_bit <= last_register.width:
+        return last_register
+
+    for register in reversed(registers):
+        if register.section != current_section:
+            continue
+        if max_bit <= register.width:
+            return register
+
+    return last_register
 
 
 def coalesce_aliases(registers: List[RegisterDef]) -> List[RegisterDef]:
