@@ -91,7 +91,6 @@ fn main() {
         sdk_dir.join("platform/chip_8258/flash/flash_mid14325e.c"),
         sdk_dir.join("platform/chip_8258/flash/flash_mid1460c8.c"),
         sdk_dir.join("proj/drivers/drv_hw.c"),
-        sdk_dir.join("proj/drivers/drv_gpio.c"),
         sdk_dir.join("proj/drivers/drv_adc.c"),
         sdk_dir.join("proj/drivers/drv_timer.c"),
         sdk_dir.join("proj/drivers/drv_nv.c"),
