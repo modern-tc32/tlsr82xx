@@ -31,13 +31,13 @@ extern "C" {
 #define LED_B                               GPIO_PC4
 
 #define PWM_R_CHANNEL                       0
-#define PWM_R_CHANNEL_SET()                 do { gpio_set_func(LED_R, AS_PWM0); } while (0)
+#define PWM_R_CHANNEL_SET()                 do { } while (0)
 
 #define PWM_G_CHANNEL                       1
-#define PWM_G_CHANNEL_SET()                 do { gpio_set_func(LED_G, AS_PWM1); } while (0)
+#define PWM_G_CHANNEL_SET()                 do { } while (0)
 
 #define PWM_B_CHANNEL                       2
-#define PWM_B_CHANNEL_SET()                 do { gpio_set_func(LED_B, AS_PWM2); } while (0)
+#define PWM_B_CHANNEL_SET()                 do { } while (0)
 
 #define R_LIGHT_PWM_CHANNEL                 PWM_R_CHANNEL
 #define G_LIGHT_PWM_CHANNEL                 PWM_G_CHANNEL
@@ -65,7 +65,7 @@ extern "C" {
 #if ZBHCI_UART
 #define UART_TX_PIN                         UART_TX_PB1
 #define UART_RX_PIN                         UART_RX_PA0
-#define UART_PIN_CFG()                      uart_gpio_set(UART_TX_PIN, UART_RX_PIN)
+#define UART_PIN_CFG()                      do { } while (0)
 #endif
 
 #if UART_PRINTF_MODE
