@@ -16,6 +16,18 @@ pub extern "C" fn main() -> i32 {
     let mut led_y_on = true;
 
     loop {
+        if board.button1_pressed() {
+            drive_pin(&mut board.led_y, true);
+            drive_pin(&mut board.led_w, false);
+            continue;
+        }
+
+        if board.button2_pressed() {
+            drive_pin(&mut board.led_y, false);
+            drive_pin(&mut board.led_w, true);
+            continue;
+        }
+
         if time::clock_time_exceed(tick, 500_000) {
             tick = time::clock_time();
             led_y_on = !led_y_on;
