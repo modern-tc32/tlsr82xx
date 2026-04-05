@@ -17,11 +17,6 @@ The example uses:
 - `ld.lld` from the packaged TC32-enabled toolchain for final linking
 - local startup/linker/support files under this example directory, so it no longer depends on `examples-rust/blink_tb03f`
 
-Additional binary:
-
-- `rgb8258` drives `LED_R`/`LED_G`/`LED_B` on `PC2`/`PC3`/`PC4` with hardware PWM
-- `uart8258` writes a periodic banner on UART TX `PB1` with RX mapped to `PA0`
-
 ## Prepare toolchain
 
 From the repo root:
@@ -58,18 +53,6 @@ Release build:
 
 ```sh
 make release
-```
-
-Build the RGB PWM binary directly:
-
-```sh
-make rgb-release
-```
-
-Build the UART binary directly:
-
-```sh
-make uart-release
 ```
 
 Outputs:

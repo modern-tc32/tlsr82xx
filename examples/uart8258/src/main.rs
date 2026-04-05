@@ -9,7 +9,6 @@ use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
 use tlsr82xx_hal::uart::{Config, UartExt};
 
-#[path = "../platform.rs"]
 mod platform;
 
 #[unsafe(no_mangle)]

@@ -1,37 +1,25 @@
 .PHONY: all help debug release bin bin-release clean check-env
 
 TARGET := tc32-unknown-none-elf
-PROFILE ?= debug
 TC32_TOOLCHAIN ?= $(abspath ../../../toolchains/tc32-stage1)
 TC32_CARGO ?= $(TC32_TOOLCHAIN)/bin/cargo
 TC32_RUSTC ?= $(TC32_TOOLCHAIN)/bin/rustc
 TC32_LLVM_BIN ?= $(TC32_TOOLCHAIN)/llvm/bin
 TARGET_DIR := ../../target/$(TARGET)
-ELF_debug := $(TARGET_DIR)/debug/tlsr82xx-blink8258
-ELF_release := $(TARGET_DIR)/release/tlsr82xx-blink8258
+ELF_debug := $(TARGET_DIR)/debug/uart8258
+ELF_release := $(TARGET_DIR)/release/uart8258
 BIN_debug := $(ELF_debug).bin
 BIN_release := $(ELF_release).bin
+
 all: debug
 
 help:
 	@echo "Targets:"
-	@echo "  make debug        Build debug ELF and tlsr82xx-blink8258.bin"
-	@echo "  make release      Build release ELF and tlsr82xx-blink8258.bin"
-	@echo "  make bin          Alias for debug"
-	@echo "  make bin-release  Alias for release"
-	@echo "  make clean        Remove example build outputs"
-	@echo ""
-	@echo "Primary flow:"
-	@echo "  1. ../../../scripts/package-stage1-tc32-toolchain.sh"
-	@echo "  2. make debug"
-	@echo ""
-	@echo "Optional overrides:"
-	@echo "  TC32_TOOLCHAIN (default: ../../../toolchains/tc32-stage1)"
-	@echo "  TC32_CARGO (default: $(TC32_TOOLCHAIN)/bin/cargo)"
-	@echo "  TC32_RUSTC (default: $(TC32_TOOLCHAIN)/bin/rustc)"
-	@echo "  TC32_LLVM_BIN (default: $(TC32_TOOLCHAIN)/llvm/bin)"
-	@echo "  TC32_SDK_DIR"
-	@echo "  TC32_CLANG_COMPAT_DIR"
+	@echo "  make debug       Build debug ELF and uart8258.bin"
+	@echo "  make release     Build release ELF and uart8258.bin"
+	@echo "  make bin         Alias for debug"
+	@echo "  make bin-release Alias for release"
+	@echo "  make clean       Remove example build outputs"
 
 check-env:
 	@test -x "$(TC32_CARGO)" || { echo "TC32_CARGO is not executable: $(TC32_CARGO)"; exit 1; }

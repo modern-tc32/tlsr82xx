@@ -9,7 +9,6 @@ use tlsr82xx_hal::pac;
 use tlsr82xx_hal::pwm::{Channel, PwmExt};
 use tlsr82xx_hal::timer;
 
-#[path = "../platform.rs"]
 mod platform;
 
 const PWM_PERIOD_TICKS: u16 = 48_000;
