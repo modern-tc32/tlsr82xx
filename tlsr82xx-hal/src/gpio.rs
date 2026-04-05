@@ -15,6 +15,7 @@ const PORT_D: u8 = 3;
 const PORT_E: u8 = 4;
 
 const GPIO_BASE: usize = 0x0080_0580;
+const IRQ_BASE: usize = 0x0080_0640;
 
 pub struct Input;
 pub struct Output;
@@ -29,6 +30,19 @@ pub enum Level {
 pub enum DriveStrength {
     Weak,
     Strong,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InterruptEdge {
+    Rising,
+    Falling,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InterruptRoute {
+    Core,
+    Risc0,
+    Risc1,
 }
 
 pub struct Pin<const PORT: u8, const BIT: u8, MODE> {
@@ -189,6 +203,15 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     #[inline(always)]
+    const fn route_reg(route: InterruptRoute) -> *mut u8 {
+        match route {
+            InterruptRoute::Core => Self::reg(0x07),
+            InterruptRoute::Risc0 => (GPIO_BASE + 0x38 + PORT as usize) as *mut u8,
+            InterruptRoute::Risc1 => (GPIO_BASE + 0x40 + PORT as usize) as *mut u8,
+        }
+    }
+
+    #[inline(always)]
     fn read_reg(offset: usize) -> u8 {
         unsafe { core::ptr::read_volatile(Self::reg(offset).cast_const()) }
     }
@@ -205,6 +228,40 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
             }
             core::ptr::write_volatile(reg, value);
         }
+    }
+
+    #[inline(always)]
+    fn modify_raw_reg(reg: *mut u8, mask: u8, set: bool) {
+        unsafe {
+            let mut value = core::ptr::read_volatile(reg.cast_const());
+            if set {
+                value |= mask;
+            } else {
+                value &= !mask;
+            }
+            core::ptr::write_volatile(reg, value);
+        }
+    }
+
+    #[inline(always)]
+    fn write_irq_mask(mask: u32) {
+        let reg = IRQ_BASE as *mut u32;
+        unsafe {
+            let value = core::ptr::read_volatile(reg.cast_const()) | mask;
+            core::ptr::write_volatile(reg, value);
+        }
+    }
+
+    #[inline(always)]
+    fn clear_irq_src(mask: u32) {
+        unsafe {
+            core::ptr::write_volatile((IRQ_BASE + 0x08) as *mut u32, mask);
+        }
+    }
+
+    #[inline(always)]
+    fn set_wakeup_irq_flag(mask: u8, enabled: bool) {
+        Self::modify_raw_reg((GPIO_BASE + 0x35) as *mut u8, mask, enabled);
     }
 
     #[inline(always)]
@@ -231,6 +288,11 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     #[inline(always)]
     fn set_drive_strength_raw(strong: bool) {
         Self::modify_reg(0x05, strong);
+    }
+
+    #[inline(always)]
+    fn set_interrupt_polarity(edge: InterruptEdge) {
+        Self::modify_reg(0x04, matches!(edge, InterruptEdge::Falling));
     }
 
     #[inline(always)]
@@ -264,6 +326,44 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
 
     pub fn set_drive_strength(&mut self, strength: DriveStrength) {
         Self::set_drive_strength_raw(matches!(strength, DriveStrength::Strong));
+    }
+
+    pub fn set_interrupt_edge(&mut self, edge: InterruptEdge) {
+        Self::set_interrupt_polarity(edge);
+    }
+
+    pub fn enable_interrupt(&mut self, route: InterruptRoute, edge: InterruptEdge) {
+        Self::set_interrupt_polarity(edge);
+        match route {
+            InterruptRoute::Core => {
+                Self::set_wakeup_irq_flag(1 << 3, true);
+                Self::clear_irq_src(1 << 18);
+                Self::write_irq_mask(1 << 18);
+            }
+            InterruptRoute::Risc0 => {
+                Self::clear_irq_src(1 << 21);
+                Self::write_irq_mask(1 << 21);
+            }
+            InterruptRoute::Risc1 => {
+                Self::clear_irq_src(1 << 22);
+                Self::write_irq_mask(1 << 22);
+            }
+        }
+        Self::modify_raw_reg(Self::route_reg(route), Self::mask(), true);
+    }
+
+    pub fn disable_interrupt(&mut self, route: InterruptRoute) {
+        Self::modify_raw_reg(Self::route_reg(route), Self::mask(), false);
+    }
+
+    pub fn enable_wakeup(&mut self, edge: InterruptEdge) {
+        Self::set_interrupt_polarity(edge);
+        Self::set_wakeup_irq_flag(1 << 2, true);
+        Self::modify_raw_reg(Self::route_reg(InterruptRoute::Core), Self::mask(), true);
+    }
+
+    pub fn disable_wakeup(&mut self) {
+        Self::modify_raw_reg(Self::route_reg(InterruptRoute::Core), Self::mask(), false);
     }
 }
 
