@@ -28,3 +28,7 @@ pub mod startup;
 pub mod timer;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod uart;
+
+#[cfg(feature = "chip-8258")]
+mod regs8258;
+mod mmio;

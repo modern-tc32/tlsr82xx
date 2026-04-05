@@ -1,10 +1,11 @@
 use crate::interrupt;
+use crate::mmio::reg8;
+#[cfg(feature = "chip-8258")]
+use crate::regs8258::{REG_MSPI_CTRL, REG_MSPI_DATA};
 
-const MSPI_DATA_ADDR: usize = 0x0080_000c;
-const MSPI_CTRL_ADDR: usize = 0x0080_000d;
-
-const FLD_MSPI_BUSY: u8 = 1 << 0;
-const FLD_MSPI_CS: u8 = 1 << 1;
+// Bit values mirror SDK semantics used by vendor flash code.
+const FLD_MSPI_CS: u8 = 1 << 0;
+const FLD_MSPI_BUSY: u8 = 1 << 4;
 
 pub const PAGE_SIZE: usize = 256;
 pub const SECTOR_SIZE: usize = 4096;
@@ -24,47 +25,42 @@ pub enum FlashStatusKind {
 }
 
 #[inline(always)]
-fn reg8(addr: usize) -> *mut u8 {
-    addr as *mut u8
-}
-
-#[inline(always)]
 fn mspi_wait() {
     unsafe {
-        while (core::ptr::read_volatile(reg8(MSPI_CTRL_ADDR).cast_const()) & FLD_MSPI_BUSY) != 0 {}
+        while (core::ptr::read_volatile(reg8(REG_MSPI_CTRL).cast_const()) & FLD_MSPI_BUSY) != 0 {}
     }
 }
 
 #[inline(always)]
 fn mspi_high() {
     unsafe {
-        core::ptr::write_volatile(reg8(MSPI_CTRL_ADDR), FLD_MSPI_CS);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), FLD_MSPI_CS);
     }
 }
 
 #[inline(always)]
 fn mspi_low() {
     unsafe {
-        core::ptr::write_volatile(reg8(MSPI_CTRL_ADDR), 0);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 0);
     }
 }
 
 #[inline(always)]
 fn mspi_get() -> u8 {
-    unsafe { core::ptr::read_volatile(reg8(MSPI_DATA_ADDR).cast_const()) }
+    unsafe { core::ptr::read_volatile(reg8(REG_MSPI_DATA).cast_const()) }
 }
 
 #[inline(always)]
 fn mspi_write(byte: u8) {
     unsafe {
-        core::ptr::write_volatile(reg8(MSPI_DATA_ADDR), byte);
+        core::ptr::write_volatile(reg8(REG_MSPI_DATA), byte);
     }
 }
 
 #[inline(always)]
 fn mspi_ctrl_write(byte: u8) {
     unsafe {
-        core::ptr::write_volatile(reg8(MSPI_CTRL_ADDR), byte);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), byte);
     }
 }
 

@@ -1,4 +1,7 @@
 use crate::analog;
+use crate::mmio::reg8;
+#[cfg(feature = "chip-8258")]
+use crate::regs8258::{AREG_FLASH_VOLTAGE, REG_CLK_SEL};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,13 +29,6 @@ impl SysClock {
     }
 }
 
-const CLK_SEL_ADDR: usize = 0x0080_0066;
-
-#[inline(always)]
-fn reg8(addr: usize) -> *mut u8 {
-    addr as *mut u8
-}
-
 #[unsafe(no_mangle)]
 pub static mut system_clk_type: u8 = SysClock::Crystal48M as u8;
 
@@ -51,13 +47,13 @@ pub extern "C" fn clock_init(sys_clk: u8) {
     };
 
     unsafe {
-        core::ptr::write_volatile(reg8(CLK_SEL_ADDR), sys_clk);
+        core::ptr::write_volatile(reg8(REG_CLK_SEL), sys_clk);
         system_clk_type = sys_clk;
         system_clk_mHz = mhz;
     }
 
     if sys_clk == SysClock::Crystal48M as u8 {
-        analog::write(0x0c, 0xc6);
+        analog::write(AREG_FLASH_VOLTAGE, 0xc6);
     }
 }
 

@@ -1,4 +1,13 @@
 use crate::{analog, clock, interrupt, timer};
+use crate::mmio::{reg8, reg32};
+#[cfg(feature = "chip-8258")]
+use crate::regs8258::{
+    ANA_32K_TICK_BYTE0, ANA_32K_TICK_BYTE1, ANA_32K_TICK_BYTE2, ANA_32K_TICK_BYTE3, ANA_REG_0X02,
+    ANA_REG_0X27, ANA_REG_0X28, ANA_REG_0X29, ANA_REG_0X2A, ANA_REG_0X8A, ANA_REG_0X8C,
+    ANA_USB_DP_PULLUP, ANA_USB_POWER, AREG_CLK_SETTING, REG_ANA_POWER_CTRL, REG_CLK_EN0,
+    REG_CLK_EN1, REG_CLK_EN2, REG_PM_INFO0, REG_PM_INFO1, REG_PWDN_CTRL, REG_RST0, REG_RST1,
+    REG_RST2, REG_SYSTEM_TICK,
+};
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -6,22 +15,6 @@ pub enum StartupState {
     Boot = 0,
     DeepRetention = 1,
     Deep = 2,
-}
-
-const ANA_POWER_CTRL_ADDR: usize = 0x0080_0074;
-const PM_INFO0_ADDR: usize = 0x0080_0048;
-const PM_INFO1_ADDR: usize = 0x0080_004c;
-const SYSTEM_ON_BASE_ADDR: usize = 0x0080_0060;
-const FLASH_CTRL_ADDR: usize = 0x0080_006f;
-
-#[inline(always)]
-fn reg8(addr: usize) -> *mut u8 {
-    addr as *mut u8
-}
-
-#[inline(always)]
-fn reg32(addr: usize) -> *mut u32 {
-    addr as *mut u32
 }
 
 #[unsafe(no_mangle)]
@@ -66,9 +59,9 @@ pub extern "C" fn adc_get_result_with_fluct(fluctuation_mv: *mut u32) -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn pm_get_info0() -> u32 {
     unsafe {
-        core::ptr::write_volatile(reg8(ANA_POWER_CTRL_ADDR), 0x62);
-        let value = core::ptr::read_volatile(reg32(PM_INFO0_ADDR).cast_const());
-        core::ptr::write_volatile(reg8(ANA_POWER_CTRL_ADDR), 0);
+        core::ptr::write_volatile(reg8(REG_ANA_POWER_CTRL), 0x62);
+        let value = core::ptr::read_volatile(reg32(REG_PM_INFO0).cast_const());
+        core::ptr::write_volatile(reg8(REG_ANA_POWER_CTRL), 0);
         value
     }
 }
@@ -76,9 +69,9 @@ pub extern "C" fn pm_get_info0() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn pm_get_info1() -> u32 {
     unsafe {
-        core::ptr::write_volatile(reg8(ANA_POWER_CTRL_ADDR), 0x62);
-        let value = core::ptr::read_volatile(reg32(PM_INFO1_ADDR).cast_const());
-        core::ptr::write_volatile(reg8(ANA_POWER_CTRL_ADDR), 0);
+        core::ptr::write_volatile(reg8(REG_ANA_POWER_CTRL), 0x62);
+        let value = core::ptr::read_volatile(reg32(REG_PM_INFO1).cast_const());
+        core::ptr::write_volatile(reg8(REG_ANA_POWER_CTRL), 0);
         value
     }
 }
@@ -89,10 +82,10 @@ pub extern "C" fn pm_get_32k_tick() -> u32 {
     let mut have_prev = false;
 
     loop {
-        let value = ((analog::read(0x43) as u32) << 24)
-            | ((analog::read(0x42) as u32) << 16)
-            | ((analog::read(0x41) as u32) << 8)
-            | analog::read(0x40) as u32;
+        let value = ((analog::read(ANA_32K_TICK_BYTE3) as u32) << 24)
+            | ((analog::read(ANA_32K_TICK_BYTE2) as u32) << 16)
+            | ((analog::read(ANA_32K_TICK_BYTE1) as u32) << 8)
+            | analog::read(ANA_32K_TICK_BYTE0) as u32;
         if !have_prev || value.wrapping_sub(prev) <= 1 {
             return value;
         }
@@ -103,8 +96,11 @@ pub extern "C" fn pm_get_32k_tick() -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn pm_wait_xtal_ready() {
-    let start = timer::clock_time();
-    while !timer::clock_time_exceed_us(start, 256) {
+    let start = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
+    while unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) }
+        .wrapping_sub(start)
+        <= 256 * timer::SYS_TICK_PER_US
+    {
         core::hint::spin_loop();
     }
 }
@@ -112,21 +108,25 @@ pub extern "C" fn pm_wait_xtal_ready() {
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_wakeup_init() {
     unsafe {
-        core::ptr::write_volatile(reg32(SYSTEM_ON_BASE_ADDR), 0xff00_0000);
-        core::ptr::write_volatile(reg8(SYSTEM_ON_BASE_ADDR + 4), 0xff);
-        core::ptr::write_volatile(reg8(SYSTEM_ON_BASE_ADDR + 5), 0xff);
-        core::ptr::write_volatile(reg8(FLASH_CTRL_ADDR), 0x80);
+        core::ptr::write_volatile(reg8(REG_RST0), 0x00);
+        core::ptr::write_volatile(reg8(REG_RST1), 0x00);
+        core::ptr::write_volatile(reg8(REG_RST2), 0x00);
+        core::ptr::write_volatile(reg8(REG_CLK_EN0), 0xff);
+        core::ptr::write_volatile(reg8(REG_CLK_EN1), 0xff);
+        core::ptr::write_volatile(reg8(REG_CLK_EN2), 0xff);
+        core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x80);
     }
 
-    analog::write(0x82, 0x64);
-    analog::write(0x34, 0x80);
-    analog::write(0x0b, 0x38);
-    analog::write(0x8c, 0x02);
-    analog::write(0x02, 0xa2);
-    analog::write(0x27, 0x00);
-    analog::write(0x28, 0x00);
-    analog::write(0x29, 0x00);
-    analog::write(0x2a, 0x00);
+    analog::write(AREG_CLK_SETTING, 0x64);
+    analog::write(ANA_USB_POWER, 0x80);
+    analog::write(ANA_USB_DP_PULLUP, 0x38);
+    analog::write(ANA_REG_0X8C, 0x02);
+    analog::write(ANA_REG_0X02, 0xa2);
+    analog::write(ANA_REG_0X27, 0x00);
+    analog::write(ANA_REG_0X28, 0x00);
+    analog::write(ANA_REG_0X29, 0x00);
+    analog::write(ANA_REG_0X2A, 0x00);
+    let _ = ANA_REG_0X8A;
 }
 
 #[inline(always)]
