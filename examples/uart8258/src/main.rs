@@ -13,9 +13,7 @@ mod platform;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    unsafe {
-        let _ = platform::drv_platform_init();
-    }
+    let _ = platform::drv_platform_init();
     tb03f::configure_uart_pins();
 
     let peripherals = unsafe { pac::Peripherals::steal() };

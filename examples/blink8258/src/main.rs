@@ -12,9 +12,7 @@ mod platform;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    unsafe {
-        let _ = platform::drv_platform_init();
-    }
+    let _ = platform::drv_platform_init();
 
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
     let mut tick = timer::clock_time();

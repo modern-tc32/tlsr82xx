@@ -16,9 +16,7 @@ const BRIGHTNESS_MAX: u16 = 255;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    unsafe {
-        let _ = platform::drv_platform_init();
-    }
+    let _ = platform::drv_platform_init();
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut pins = peripherals.gpio.split();

@@ -79,8 +79,6 @@ fn main() {
         common_dir.join("support/adc_shim.c"),
         common_dir.join("support/flash_shim.c"),
         common_dir.join("support/irq_handler_stub.c"),
-        common_dir.join("support/platform_init.c"),
-        common_dir.join("support/platform_stubs.c"),
         common_dir.join("support/memset.c"),
         common_dir.join("support/indirect_call_r3.c"),
         common_dir.join("support/tc32_boot_init.c"),
