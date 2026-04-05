@@ -13,4 +13,5 @@ compile_error!("enable one tlsr82xx-hal chip feature");
 
 pub use tlsr82xx_pac as pac;
 
+pub mod analog;
 pub mod gpio;

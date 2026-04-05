@@ -1,3 +1,4 @@
+use tlsr82xx_hal::analog::Pull;
 use tlsr82xx_hal::gpio::{DriveStrength, GpioExt, Level, PA7, PB4, PB5, PD2};
 use tlsr82xx_hal::pac;
 
@@ -19,11 +20,13 @@ pub fn init() -> Board {
     let pins = peripherals.gpio.split();
     let mut led_y = pins.pb4.into_output_with_state(Level::High);
     let mut led_w = pins.pb5.into_output_with_state(Level::Low);
-    let button1 = pins.pa7.into_input();
-    let button2 = pins.pd2.into_input();
+    let mut button1 = pins.pa7.into_input();
+    let mut button2 = pins.pd2.into_input();
 
     led_y.set_drive_strength(DriveStrength::Strong);
     led_w.set_drive_strength(DriveStrength::Strong);
+    button1.set_pull_resistor(Pull::PullUp1M);
+    button2.set_pull_resistor(Pull::PullUp10K);
 
     Board {
         led_y,

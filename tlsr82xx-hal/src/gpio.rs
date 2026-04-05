@@ -6,7 +6,7 @@ use embedded_hal::digital::{
     StatefulOutputPin as EhStatefulOutputPin,
 };
 
-use crate::pac;
+use crate::{analog, pac};
 
 const PORT_A: u8 = 0;
 const PORT_B: u8 = 1;
@@ -326,6 +326,19 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
 
     pub fn set_drive_strength(&mut self, strength: DriveStrength) {
         Self::set_drive_strength_raw(matches!(strength, DriveStrength::Strong));
+    }
+
+    pub fn set_pull_resistor(&mut self, pull: analog::Pull) {
+        debug_assert!(PORT <= PORT_D);
+        if PORT > PORT_D {
+            return;
+        }
+
+        let addr = 0x0e + PORT + (BIT / 4);
+        let shift = (BIT % 4) * 2;
+        let mask = 0b11 << shift;
+        let value = (analog::read(addr) & !mask) | (pull.bits() << shift);
+        analog::write(addr, value);
     }
 
     pub fn set_interrupt_edge(&mut self, edge: InterruptEdge) {
