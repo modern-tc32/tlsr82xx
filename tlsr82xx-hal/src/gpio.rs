@@ -265,6 +265,65 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     #[inline(always)]
+    fn pull_addr_shift() -> Option<(u8, u8)> {
+        #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+        {
+            if PORT <= PORT_D {
+                let addr = 0x0e + PORT + (BIT / 4);
+                let shift = (BIT % 4) * 2;
+                return Some((addr, shift));
+            }
+            return None;
+        }
+
+        #[cfg(feature = "chip-826x")]
+        {
+            return match (PORT, BIT) {
+                (PORT_A, 0) => Some((0x0a, 4)),
+                (PORT_A, 1) => Some((0x0a, 6)),
+                (PORT_A, 2) => Some((0x0b, 0)),
+                (PORT_A, 3) => Some((0x0b, 2)),
+                (PORT_A, 4) => Some((0x0b, 4)),
+                (PORT_A, 5) => Some((0x0b, 6)),
+                (PORT_A, 6) => Some((0x0c, 0)),
+                (PORT_A, 7) => Some((0x0c, 2)),
+                (PORT_B, 0) => Some((0x0c, 4)),
+                (PORT_B, 1) => Some((0x0c, 6)),
+                (PORT_B, 2) => Some((0x0d, 0)),
+                (PORT_B, 3) => Some((0x0d, 2)),
+                (PORT_B, 4) => Some((0x0d, 4)),
+                (PORT_B, 5) => Some((0x0d, 6)),
+                (PORT_B, 6) => Some((0x0e, 0)),
+                (PORT_B, 7) => Some((0x0e, 2)),
+                (PORT_C, 0) => Some((0x0e, 4)),
+                (PORT_C, 1) => Some((0x0e, 6)),
+                (PORT_C, 2) => Some((0x0f, 0)),
+                (PORT_C, 3) => Some((0x0f, 2)),
+                (PORT_C, 4) => Some((0x0f, 4)),
+                (PORT_C, 5) => Some((0x0f, 6)),
+                (PORT_C, 6) => Some((0x10, 0)),
+                (PORT_C, 7) => Some((0x10, 2)),
+                (PORT_D, 0) => Some((0x10, 4)),
+                (PORT_D, 1) => Some((0x10, 6)),
+                (PORT_D, 2) => Some((0x11, 0)),
+                (PORT_D, 3) => Some((0x11, 2)),
+                (PORT_D, 4) => Some((0x11, 4)),
+                (PORT_D, 5) => Some((0x11, 6)),
+                (PORT_D, 6) => Some((0x12, 0)),
+                (PORT_D, 7) => Some((0x12, 2)),
+                (PORT_E, 0) => Some((0x12, 4)),
+                (PORT_E, 1) => Some((0x12, 6)),
+                (PORT_E, 2) => Some((0x08, 4)),
+                (PORT_E, 3) => Some((0x08, 6)),
+                _ => None,
+            };
+        }
+
+        #[allow(unreachable_code)]
+        None
+    }
+
+    #[inline(always)]
     fn configure_as_gpio() {
         Self::modify_reg(0x06, true);
     }
@@ -329,13 +388,9 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     pub fn set_pull_resistor(&mut self, pull: analog::Pull) {
-        debug_assert!(PORT <= PORT_D);
-        if PORT > PORT_D {
+        let Some((addr, shift)) = Self::pull_addr_shift() else {
             return;
-        }
-
-        let addr = 0x0e + PORT + (BIT / 4);
-        let shift = (BIT % 4) * 2;
+        };
         let mask = 0b11 << shift;
         let value = (analog::read(addr) & !mask) | (pull.bits() << shift);
         analog::write(addr, value);
