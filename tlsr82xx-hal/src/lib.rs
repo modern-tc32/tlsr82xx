@@ -18,3 +18,5 @@ pub mod gpio;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod pwm;
 pub mod timer;
+#[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+pub mod uart;
