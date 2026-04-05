@@ -10,11 +10,18 @@ use tlsr82xx_hal::timer;
 #[path = "../platform.rs"]
 mod platform;
 
-const PORT_C: usize = 2;
-const GPIO_BASE: usize = 0x0080_0580;
-const MUX_BASE: usize = 0x0080_05a8;
+const GPIO_PC2: u32 = 0x0204;
+const GPIO_PC3: u32 = 0x0208;
+const GPIO_PC4: u32 = 0x0210;
+const AS_PWM0: u32 = 20;
+const AS_PWM1: u32 = 21;
+const AS_PWM2: u32 = 22;
 const PWM_PERIOD_TICKS: u16 = 48_000;
 const BRIGHTNESS_MAX: u16 = 255;
+
+unsafe extern "C" {
+    fn gpio_set_func(pin: u32, func: u32);
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
@@ -22,9 +29,11 @@ pub extern "C" fn main() -> i32 {
         let _ = platform::drv_platform_init();
     }
 
-    configure_tb03f_rgb_pin(2);
-    configure_tb03f_rgb_pin(3);
-    configure_tb03f_rgb_pin(4);
+    unsafe {
+        gpio_set_func(GPIO_PC2, AS_PWM0);
+        gpio_set_func(GPIO_PC3, AS_PWM1);
+        gpio_set_func(GPIO_PC4, AS_PWM2);
+    }
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut pwm = peripherals.pwm.constrain();
@@ -47,22 +56,6 @@ pub extern "C" fn main() -> i32 {
             pwm.set_duty_8bit(Channel::Pwm1, rgb.g);
             pwm.set_duty_8bit(Channel::Pwm2, rgb.b);
         }
-    }
-}
-
-fn configure_tb03f_rgb_pin(bit: usize) {
-    let gpio_func = (GPIO_BASE + PORT_C * 8 + 0x06) as *mut u8;
-    let mux = (MUX_BASE + PORT_C * 2 + (bit / 4)) as *mut u8;
-    let shift = (3 - (bit % 4)) * 2;
-    let field_mask = !(0b11u8 << shift);
-    let bit_mask = 1u8 << bit;
-
-    unsafe {
-        let mux_value = core::ptr::read_volatile(mux.cast_const()) & field_mask;
-        core::ptr::write_volatile(mux, mux_value);
-
-        let gpio_func_value = core::ptr::read_volatile(gpio_func.cast_const()) & !bit_mask;
-        core::ptr::write_volatile(gpio_func, gpio_func_value);
     }
 }
 

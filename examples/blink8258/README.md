@@ -62,7 +62,7 @@ make release
 Build the RGB PWM binary directly:
 
 ```sh
-cargo build --release --bin rgb8258
+make rgb-release
 ```
 
 Outputs:
