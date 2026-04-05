@@ -113,7 +113,6 @@ fn main() {
         println!("cargo:rerun-if-changed={}", header.display());
     }
 
-    let drivers = sdk_dir.join("platform/lib/libdrivers_8258.a");
     let soft_fp = sdk_dir.join("platform/tc32/libsoft-fp.a");
 
     println!("cargo:rustc-link-arg=--gc-sections");
@@ -131,7 +130,6 @@ fn main() {
         println!("cargo:rustc-link-arg={}", object.display());
     }
     println!("cargo:rustc-link-arg=--start-group");
-    println!("cargo:rustc-link-arg={}", drivers.display());
     println!("cargo:rustc-link-arg={}", soft_fp.display());
     println!("cargo:rustc-link-arg=--end-group");
 }
