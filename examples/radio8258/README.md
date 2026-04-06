@@ -6,7 +6,7 @@ What it does:
 
 - initializes the board and HAL startup path
 - configures a shared RF RX buffer
-- alternates between `BLE 1M` and `Zigbee 250K` radio presets
+- alternates between `BleConfig::advertising(37)` and `ZigbeeConfig::new(11)`
 - schedules a broadcast RX command after each mode switch
 - uses the TB03F LEDs to show the active preset
 

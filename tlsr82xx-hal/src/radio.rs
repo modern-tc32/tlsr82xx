@@ -43,6 +43,78 @@ pub enum RadioChannel {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BleConfig {
+    pub channel: u8,
+    pub access_code: u32,
+    pub crc: [u8; 3],
+    pub power: RadioPower,
+}
+
+impl BleConfig {
+    #[inline(always)]
+    pub const fn advertising(channel: u8) -> Self {
+        Self {
+            channel,
+            access_code: 0x8e89_bed6,
+            crc: [0x55, 0x55, 0x55],
+            power: RadioPower::PLUS_3P23_DBM,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn data(channel: u8, access_code: u32, crc: [u8; 3]) -> Self {
+        Self {
+            channel,
+            access_code,
+            crc,
+            power: RadioPower::PLUS_3P23_DBM,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn with_power(self, power: RadioPower) -> Self {
+        Self { power, ..self }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ZigbeeConfig {
+    pub channel: u8,
+    pub power: RadioPower,
+}
+
+impl ZigbeeConfig {
+    #[inline(always)]
+    pub const fn new(channel: u8) -> Self {
+        Self {
+            channel,
+            power: RadioPower::PLUS_3P23_DBM,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn with_power(self, power: RadioPower) -> Self {
+        Self { power, ..self }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioConfig {
+    Ble(BleConfig),
+    Zigbee(ZigbeeConfig),
+}
+
+impl RadioConfig {
+    #[inline(always)]
+    pub const fn mode(self) -> RadioMode {
+        match self {
+            Self::Ble(_) => RadioMode::Ble1M,
+            Self::Zigbee(_) => RadioMode::Zigbee250K,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RadioPower(u8);
 
 impl RadioPower {
@@ -298,8 +370,18 @@ impl Radio {
     }
 
     #[inline(always)]
+    pub fn set_ble_access_code(&mut self, access_code: u32) {
+        self.set_access_code(access_code.swap_bytes());
+    }
+
+    #[inline(always)]
     pub fn set_ble_advertising_crc(&mut self) {
         self.set_crc_init(BLE_ADV_CRC_INIT);
+    }
+
+    #[inline(always)]
+    pub fn set_ble_crc(&mut self, crc: [u8; 3]) {
+        self.set_crc_init((crc[0] as u32) | ((crc[1] as u32) << 8) | ((crc[2] as u32) << 16));
     }
 
     #[inline(always)]
@@ -374,6 +456,13 @@ impl Radio {
     }
 
     #[inline(always)]
+    pub fn stop_trx(&mut self) {
+        unsafe {
+            core::ptr::write_volatile(reg8(REG_RF_MODE_CONTROL), 0x80);
+        }
+    }
+
+    #[inline(always)]
     pub fn start_srx2tx_at(&mut self, tx_packet: &[u8], tick: u32) -> Result<(), RadioError> {
         self.configure_tx_buffer(tx_packet)?;
         self.enable_scheduled_command(RF_CMD_SRX2TX, tick);
@@ -398,18 +487,92 @@ impl Radio {
         self.set_tx_settle_us(DEFAULT_TX_SETTLE_US);
 
         match mode {
-            RadioMode::Ble1M => {
-                self.set_power(RadioPower::PLUS_3P23_DBM);
-                self.set_ble_channel(37)?;
-                self.set_ble_advertising_access_code();
-                self.set_ble_advertising_crc();
-            }
-            RadioMode::Zigbee250K => {
-                self.set_power(RadioPower::PLUS_3P23_DBM);
-                self.set_zigbee_channel(11)?;
-            }
+            RadioMode::Ble1M => self.init_ble_advertising()?,
+            RadioMode::Zigbee250K => self.init_zigbee_250k()?,
         }
 
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn apply_config(&mut self, config: RadioConfig) -> Result<(), RadioError> {
+        match config {
+            RadioConfig::Ble(config) => self.apply_ble_config(config),
+            RadioConfig::Zigbee(config) => self.apply_zigbee_config(config),
+        }
+    }
+
+    #[inline(always)]
+    pub fn apply_config_and_start_brx_at(
+        &mut self,
+        config: RadioConfig,
+        tick: u32,
+    ) -> Result<(), RadioError> {
+        self.apply_config(config)?;
+        self.start_brx_at(tick);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn apply_config_and_start_srx2tx_at(
+        &mut self,
+        config: RadioConfig,
+        tx_packet: &[u8],
+        tick: u32,
+    ) -> Result<(), RadioError> {
+        self.apply_config(config)?;
+        self.start_srx2tx_at(tx_packet, tick)
+    }
+
+    #[inline(always)]
+    pub fn apply_config_and_start_stx2rx_at(
+        &mut self,
+        config: RadioConfig,
+        tx_packet: &[u8],
+        tick: u32,
+    ) -> Result<(), RadioError> {
+        self.apply_config(config)?;
+        self.start_stx2rx_at(tx_packet, tick)
+    }
+
+    #[inline(always)]
+    pub fn init_ble_advertising(&mut self) -> Result<(), RadioError> {
+        self.apply_ble_config(BleConfig::advertising(37))
+    }
+
+    #[inline(always)]
+    pub fn init_ble_with_access_code_crc(
+        &mut self,
+        channel: u8,
+        access_code: u32,
+        crc: [u8; 3],
+    ) -> Result<(), RadioError> {
+        self.apply_ble_config(BleConfig::data(channel, access_code, crc))
+    }
+
+    #[inline(always)]
+    pub fn init_zigbee_250k(&mut self) -> Result<(), RadioError> {
+        self.apply_zigbee_config(ZigbeeConfig::new(11))
+    }
+
+    #[inline(always)]
+    pub fn init_zigbee_channel(&mut self, channel: u8) -> Result<(), RadioError> {
+        self.apply_zigbee_config(ZigbeeConfig::new(channel))
+    }
+
+    #[inline(always)]
+    pub fn apply_ble_config(&mut self, config: BleConfig) -> Result<(), RadioError> {
+        self.set_power(config.power);
+        self.set_ble_channel(config.channel)?;
+        self.set_ble_access_code(config.access_code);
+        self.set_ble_crc(config.crc);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn apply_zigbee_config(&mut self, config: ZigbeeConfig) -> Result<(), RadioError> {
+        self.set_power(config.power);
+        self.set_zigbee_channel(config.channel)?;
         Ok(())
     }
 

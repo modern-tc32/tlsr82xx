@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 
 use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::pac;
-use tlsr82xx_hal::radio::{IrqFlags, Radio, RadioMode};
+use tlsr82xx_hal::radio::{BleConfig, IrqFlags, Radio, RadioConfig, ZigbeeConfig};
 use tlsr82xx_hal::timer;
 
 mod platform;
@@ -23,13 +23,14 @@ pub extern "C" fn main() -> i32 {
     let mut radio = Radio::new();
     let mut ble_mode = true;
     let mut next_switch = timer::clock_time();
+    let ble_config = RadioConfig::Ble(BleConfig::advertising(37));
+    let zigbee_config = RadioConfig::Zigbee(ZigbeeConfig::new(11));
 
     unsafe {
         radio.set_rx_buffer(core::ptr::addr_of_mut!(RX_BUFFER.0).cast::<u8>());
     }
     radio.set_irq_mask(IrqFlags::RX);
-    let _ = radio.init_mode(RadioMode::Ble1M);
-    radio.start_brx_at(timer::clock_time().wrapping_add(32 * 200));
+    let _ = radio.apply_config_and_start_brx_at(ble_config, timer::clock_time().wrapping_add(32 * 200));
     drive_mode_leds(&mut board, ble_mode);
 
     loop {
@@ -38,12 +39,11 @@ pub extern "C" fn main() -> i32 {
             ble_mode = !ble_mode;
 
             let _ = if ble_mode {
-                radio.init_mode(RadioMode::Ble1M)
+                radio.apply_config_and_start_brx_at(ble_config, timer::clock_time().wrapping_add(32 * 200))
             } else {
-                radio.init_mode(RadioMode::Zigbee250K)
+                radio.apply_config_and_start_brx_at(zigbee_config, timer::clock_time().wrapping_add(32 * 200))
             };
             radio.clear_all_irq_status();
-            radio.start_brx_at(timer::clock_time().wrapping_add(32 * 200));
             drive_mode_leds(&mut board, ble_mode);
         }
     }
