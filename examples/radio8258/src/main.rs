@@ -3,6 +3,7 @@
 
 use core::panic::PanicInfo;
 
+use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::radio::{BleConfig, IrqFlags, Radio, RadioConfig, ZigbeeConfig};
@@ -50,13 +51,8 @@ pub extern "C" fn main() -> i32 {
 }
 
 fn drive_mode_leds(board: &mut Board, ble_mode: bool) {
-    if ble_mode {
-        let _ = board.led_y.set_high();
-        let _ = board.led_w.set_low();
-    } else {
-        let _ = board.led_y.set_low();
-        let _ = board.led_w.set_high();
-    }
+    let _ = board.led_y.set_state(PinState::from(ble_mode));
+    let _ = board.led_w.set_state(PinState::from(!ble_mode));
 }
 
 #[panic_handler]

@@ -740,33 +740,40 @@ fn pull_addr_shift_raw(port: u8, bit: u8) -> Option<(u8, u8)> {
 }
 
 impl<const PORT: u8, const BIT: u8> Pin<PORT, BIT, Output> {
-    pub fn set_high(&mut self) {
+    #[inline(always)]
+    fn set_output_high(&mut self) {
         Self::write_data(true);
     }
 
-    pub fn set_low(&mut self) {
+    #[inline(always)]
+    fn set_output_low(&mut self) {
         Self::write_data(false);
     }
 
-    pub fn toggle(&mut self) {
+    #[inline(always)]
+    fn toggle_output(&mut self) {
         Self::write_data(!Self::read_output_level());
     }
 
-    pub fn is_set_high(&self) -> bool {
+    #[inline(always)]
+    fn output_is_set_high(&self) -> bool {
         Self::read_output_level()
     }
 
-    pub fn is_set_low(&self) -> bool {
+    #[inline(always)]
+    fn output_is_set_low(&self) -> bool {
         !Self::read_output_level()
     }
 }
 
 impl<const PORT: u8, const BIT: u8> Pin<PORT, BIT, Input> {
-    pub fn is_high(&self) -> bool {
+    #[inline(always)]
+    fn input_is_high(&self) -> bool {
         Self::read_input_level()
     }
 
-    pub fn is_low(&self) -> bool {
+    #[inline(always)]
+    fn input_is_low(&self) -> bool {
         !Self::read_input_level()
     }
 }
@@ -777,32 +784,37 @@ impl<const PORT: u8, const BIT: u8, MODE> ErrorType for Pin<PORT, BIT, MODE> {
 
 impl<const PORT: u8, const BIT: u8> EhOutputPin for Pin<PORT, BIT, Output> {
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        Pin::<PORT, BIT, Output>::set_low(self);
+        self.set_output_low();
         Ok(())
     }
 
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        Pin::<PORT, BIT, Output>::set_high(self);
+        self.set_output_high();
         Ok(())
     }
 }
 
 impl<const PORT: u8, const BIT: u8> EhStatefulOutputPin for Pin<PORT, BIT, Output> {
     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::<PORT, BIT, Output>::is_set_high(self))
+        Ok(self.output_is_set_high())
     }
 
     fn is_set_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::<PORT, BIT, Output>::is_set_low(self))
+        Ok(self.output_is_set_low())
+    }
+
+    fn toggle(&mut self) -> Result<(), Self::Error> {
+        self.toggle_output();
+        Ok(())
     }
 }
 
 impl<const PORT: u8, const BIT: u8> EhInputPin for Pin<PORT, BIT, Input> {
     fn is_high(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::<PORT, BIT, Input>::is_high(self))
+        Ok(self.input_is_high())
     }
 
     fn is_low(&mut self) -> Result<bool, Self::Error> {
-        Ok(Pin::<PORT, BIT, Input>::is_low(self))
+        Ok(self.input_is_low())
     }
 }

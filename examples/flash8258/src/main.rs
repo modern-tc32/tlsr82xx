@@ -3,7 +3,7 @@
 
 use core::panic::PanicInfo;
 
-use embedded_hal::digital::OutputPin;
+use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::flash::Flash;
 use tlsr82xx_hal::pac;
@@ -42,7 +42,7 @@ pub extern "C" fn main() -> i32 {
 }
 
 fn drive_pin<P: OutputPin>(pin: &mut P, high: bool) {
-    let _ = if high { pin.set_high() } else { pin.set_low() };
+    let _ = pin.set_state(PinState::from(high));
 }
 
 #[panic_handler]

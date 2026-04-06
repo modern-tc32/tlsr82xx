@@ -1,3 +1,4 @@
+use embedded_hal::digital::InputPin;
 use tlsr82xx_hal::analog::Pull;
 use tlsr82xx_hal::gpio::{
     DriveStrength, GpioExt, Input, Level, Output, PinFunction, PA7, PB4, PB5, Pins,
@@ -32,8 +33,8 @@ impl Board {
         Self::from_pins(peripherals.gpio.split())
     }
 
-    pub fn button1_pressed(&self) -> bool {
-        self.button1.is_low()
+    pub fn button1_pressed(&mut self) -> bool {
+        InputPin::is_low(&mut self.button1).unwrap_or(false)
     }
 }
 
