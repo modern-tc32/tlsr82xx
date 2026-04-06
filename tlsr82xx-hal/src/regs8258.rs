@@ -54,12 +54,19 @@ pub(crate) const REG_PM_INFO1: usize = 0x0080_004c;
 pub(crate) const REG_SUSPEND_RET_ADDR_HI: usize = 0x0080_060d;
 
 // RF helper aliases used by `rf_drv.h` as raw addresses without public names.
-pub(crate) const REG_RF_AUTO_MODE: usize = 0x0080_0f00;
+pub(crate) const REG_RF_MODE_CONTROL: usize = 0x0080_0f00;
 pub(crate) const REG_RF_SN: usize = 0x0080_0f01;
+pub(crate) const REG_RF_ACCESS_CODE: usize = 0x0080_0408;
+pub(crate) const REG_RF_CHANNEL: usize = 0x0080_040d;
 pub(crate) const REG_RF_RX_MODE: usize = 0x0080_0428;
+pub(crate) const REG_RF_CRC: usize = 0x0080_044c;
 pub(crate) const REG_RF_RSSI: usize = 0x0080_0441;
 pub(crate) const REG_RF_RX_STATUS: usize = 0x0080_0448;
 pub(crate) const REG_RF_POWER: usize = 0x0080_04a2;
+pub(crate) const REG_PLL_RX_FINE_DIV_TUNE: usize = 0x0080_04d6;
+pub(crate) const REG_DMA3_ADDR: usize = 0x0080_0c0c;
+pub(crate) const REG_DMA3_ADDR_HI: usize = 0x0080_0c43;
+pub(crate) const REG_RF_SCHED_TICK: usize = 0x0080_0f18;
 
 pub(crate) const AREG_FLASH_VOLTAGE: u8 = 0x0c;
 pub(crate) const AREG_CLK_SETTING: u8 = 0x82;

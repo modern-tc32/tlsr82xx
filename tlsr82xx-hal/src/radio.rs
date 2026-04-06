@@ -1,16 +1,109 @@
-use crate::mmio::{reg16, reg8};
+use crate::analog;
+use crate::mmio::{reg16, reg32, reg8};
 use crate::regs8258::{
     FLD_RF_IRQ_ALL, FLD_RF_IRQ_CMD_DONE, FLD_RF_IRQ_FIRST_TIMEOUT, FLD_RF_IRQ_FSM_TIMEOUT,
     FLD_RF_IRQ_INVALID_PID, FLD_RF_IRQ_RETRY_HIT, FLD_RF_IRQ_RX, FLD_RF_IRQ_RX_CRC_2,
-    FLD_RF_IRQ_RX_DR, FLD_RF_IRQ_RX_TIMEOUT, FLD_RF_IRQ_STX_TIMEOUT, FLD_RF_IRQ_TX,
-    FLD_RF_IRQ_TX_DS, FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_RF_AUTO_MODE,
-    REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS, REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3,
-    REG_RF_POWER, REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SN, REG_RF_TX_SETTLE,
+    FLD_RF_IRQ_RX_DR, FLD_RF_IRQ_RX_TIMEOUT, FLD_RF_IRQ_STX_TIMEOUT, FLD_RF_IRQ_TX, FLD_RF_IRQ_TX_DS,
+    FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_DMA3_ADDR, REG_DMA3_ADDR_HI, REG_PLL_RX_FINE_DIV_TUNE,
+    REG_RF_ACCESS_CODE, REG_RF_CHANNEL, REG_RF_CRC, REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS,
+    REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3, REG_RF_MODE_CONTROL, REG_RF_POWER,
+    REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SCHED_TICK, REG_RF_SN, REG_RF_TX_SETTLE,
     REG_RST1,
 };
 
 const RF_TRX_MODE: u8 = 0xe0;
 const RF_TRX_OFF: u8 = 0x45;
+const DEFAULT_TX_SETTLE_US: u16 = 113;
+const RF_CMD_BRX: u8 = 0x82;
+const RF_CMD_SRX2TX: u8 = 0x85;
+const RF_CMD_STX2RX: u8 = 0x87;
+const BLE_ADV_ACCESS_CODE: u32 = 0xd6be898e;
+const BLE_ADV_CRC_INIT: u32 = 0x0055_5555;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioMode {
+    Ble1M,
+    Zigbee250K,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioError {
+    EmptyRxBuffer,
+    UnalignedRxBuffer,
+    EmptyTxBuffer,
+    UnalignedTxBuffer,
+    InvalidBleChannel(u8),
+    InvalidZigbeeChannel(u8),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioChannel {
+    Ble(u8),
+    Zigbee(u8),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RadioPower(u8);
+
+impl RadioPower {
+    pub const PLUS_10P46_DBM: Self = Self(63);
+    pub const PLUS_10P29_DBM: Self = Self(61);
+    pub const PLUS_10P01_DBM: Self = Self(58);
+    pub const PLUS_9P81_DBM: Self = Self(56);
+    pub const PLUS_9P48_DBM: Self = Self(53);
+    pub const PLUS_9P24_DBM: Self = Self(51);
+    pub const PLUS_8P97_DBM: Self = Self(49);
+    pub const PLUS_8P73_DBM: Self = Self(47);
+    pub const PLUS_8P44_DBM: Self = Self(45);
+    pub const PLUS_8P13_DBM: Self = Self(43);
+    pub const PLUS_7P79_DBM: Self = Self(41);
+    pub const PLUS_7P41_DBM: Self = Self(39);
+    pub const PLUS_7P02_DBM: Self = Self(37);
+    pub const PLUS_6P60_DBM: Self = Self(35);
+    pub const PLUS_6P14_DBM: Self = Self(33);
+    pub const PLUS_5P65_DBM: Self = Self(31);
+    pub const PLUS_5P13_DBM: Self = Self(29);
+    pub const PLUS_4P57_DBM: Self = Self(27);
+    pub const PLUS_3P94_DBM: Self = Self(25);
+    pub const PLUS_3P23_DBM: Self = Self(23);
+    pub const PLUS_3P01_DBM: Self = Self(0x80 | 63);
+    pub const PLUS_2P81_DBM: Self = Self(0x80 | 61);
+    pub const PLUS_2P61_DBM: Self = Self(0x80 | 59);
+    pub const PLUS_2P39_DBM: Self = Self(0x80 | 57);
+    pub const PLUS_1P99_DBM: Self = Self(0x80 | 54);
+    pub const PLUS_1P73_DBM: Self = Self(0x80 | 52);
+    pub const PLUS_1P45_DBM: Self = Self(0x80 | 50);
+    pub const PLUS_1P17_DBM: Self = Self(0x80 | 48);
+    pub const PLUS_0P90_DBM: Self = Self(0x80 | 46);
+    pub const PLUS_0P58_DBM: Self = Self(0x80 | 44);
+    pub const PLUS_0P04_DBM: Self = Self(0x80 | 41);
+    pub const MINUS_0P14_DBM: Self = Self(0x80 | 40);
+    pub const MINUS_0P97_DBM: Self = Self(0x80 | 36);
+    pub const MINUS_1P42_DBM: Self = Self(0x80 | 34);
+    pub const MINUS_1P89_DBM: Self = Self(0x80 | 32);
+    pub const MINUS_2P48_DBM: Self = Self(0x80 | 30);
+    pub const MINUS_3P03_DBM: Self = Self(0x80 | 28);
+    pub const MINUS_3P61_DBM: Self = Self(0x80 | 26);
+    pub const MINUS_4P26_DBM: Self = Self(0x80 | 24);
+    pub const MINUS_5P03_DBM: Self = Self(0x80 | 22);
+    pub const MINUS_5P81_DBM: Self = Self(0x80 | 20);
+    pub const MINUS_6P67_DBM: Self = Self(0x80 | 18);
+    pub const MINUS_7P65_DBM: Self = Self(0x80 | 16);
+    pub const MINUS_8P65_DBM: Self = Self(0x80 | 14);
+    pub const MINUS_9P89_DBM: Self = Self(0x80 | 12);
+    pub const MINUS_11P40_DBM: Self = Self(0x80 | 10);
+    pub const MINUS_13P29_DBM: Self = Self(0x80 | 8);
+    pub const MINUS_15P88_DBM: Self = Self(0x80 | 6);
+    pub const MINUS_19P27_DBM: Self = Self(0x80 | 4);
+    pub const MINUS_25P18_DBM: Self = Self(0x80 | 2);
+    pub const MINUS_30_DBM: Self = Self(0xff);
+    pub const MINUS_50_DBM: Self = Self(0x80);
+
+    #[inline(always)]
+    pub const fn raw(self) -> u8 {
+        self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrqFlags(pub u16);
@@ -91,7 +184,7 @@ impl Radio {
     #[inline(always)]
     pub fn set_tx_rx_off_auto_mode(&mut self) {
         unsafe {
-            core::ptr::write_volatile(reg8(REG_RF_AUTO_MODE), 0x80);
+            core::ptr::write_volatile(reg8(REG_RF_MODE_CONTROL), 0x80);
         }
     }
 
@@ -134,10 +227,190 @@ impl Radio {
     }
 
     #[inline(always)]
+    pub fn configure_rx_buffer(&mut self, buffer: &mut [u8]) -> Result<(), RadioError> {
+        if buffer.is_empty() {
+            return Err(RadioError::EmptyRxBuffer);
+        }
+        if (buffer.as_mut_ptr() as usize & 0x3) != 0 {
+            return Err(RadioError::UnalignedRxBuffer);
+        }
+        self.set_rx_buffer(buffer.as_mut_ptr());
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn set_tx_buffer(&mut self, buffer: *const u8) {
+        let addr = buffer as usize;
+        unsafe {
+            core::ptr::write_volatile(reg16(REG_DMA3_ADDR), addr as u16);
+            core::ptr::write_volatile(reg8(REG_DMA3_ADDR_HI), (addr >> 16) as u8);
+        }
+    }
+
+    #[inline(always)]
+    pub fn configure_tx_buffer(&mut self, buffer: &[u8]) -> Result<(), RadioError> {
+        if buffer.is_empty() {
+            return Err(RadioError::EmptyTxBuffer);
+        }
+        if (buffer.as_ptr() as usize & 0x3) != 0 {
+            return Err(RadioError::UnalignedTxBuffer);
+        }
+        self.set_tx_buffer(buffer.as_ptr());
+        Ok(())
+    }
+
+    #[inline(always)]
     pub fn set_power_raw(&mut self, value: u8) {
         unsafe {
             core::ptr::write_volatile(reg8(REG_RF_POWER), value);
         }
+    }
+
+    #[inline(always)]
+    pub fn set_power(&mut self, power: RadioPower) {
+        self.set_power_raw(power.raw());
+    }
+
+    #[inline(always)]
+    pub fn set_channel_raw(&mut self, channel: u8) {
+        unsafe {
+            core::ptr::write_volatile(reg8(REG_RF_CHANNEL), channel);
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_access_code(&mut self, access_code: u32) {
+        unsafe {
+            core::ptr::write_volatile(reg32(REG_RF_ACCESS_CODE), access_code);
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_crc_init(&mut self, crc_init: u32) {
+        unsafe {
+            core::ptr::write_volatile(reg32(REG_RF_CRC), crc_init & 0x00ff_ffff);
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_ble_advertising_access_code(&mut self) {
+        self.set_access_code(BLE_ADV_ACCESS_CODE);
+    }
+
+    #[inline(always)]
+    pub fn set_ble_advertising_crc(&mut self) {
+        self.set_crc_init(BLE_ADV_CRC_INIT);
+    }
+
+    #[inline(always)]
+    fn apply_channel_frequency(&mut self, channel_reg: u8, pll_freq_mhz: u16) {
+        self.set_channel_raw(channel_reg);
+        analog::write(0x06, 0x00);
+        unsafe {
+            core::ptr::write_volatile(reg8(REG_RF_LL_CTRL_3), 0x29);
+            core::ptr::write_volatile(reg8(REG_RF_RX_MODE), 0x00);
+            core::ptr::write_volatile(reg8(REG_RF_LL_CTRL_0), RF_TRX_OFF);
+            core::ptr::write_volatile(reg16(REG_PLL_RX_FINE_DIV_TUNE), pll_freq_mhz);
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_channel(&mut self, channel: RadioChannel) -> Result<(), RadioError> {
+        match channel {
+            RadioChannel::Ble(channel) => self.set_ble_channel(channel),
+            RadioChannel::Zigbee(channel) => self.set_zigbee_channel(channel),
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_ble_channel(&mut self, channel: u8) -> Result<(), RadioError> {
+        if channel > 39 {
+            return Err(RadioError::InvalidBleChannel(channel));
+        }
+        let pll_freq_mhz = match channel {
+            37 => 2402,
+            38 => 2426,
+            39 => 2480,
+            0..=10 => 2404 + (channel as u16) * 2,
+            _ => 2428 + ((channel as u16) - 11) * 2,
+        };
+        self.apply_channel_frequency(channel, pll_freq_mhz);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn set_zigbee_channel(&mut self, channel: u8) -> Result<(), RadioError> {
+        if !(11..=26).contains(&channel) {
+            return Err(RadioError::InvalidZigbeeChannel(channel));
+        }
+        let raw = (channel - 10) * 5;
+        let pll_freq_mhz = 2405 + ((channel as u16) - 11) * 5;
+        self.apply_channel_frequency(raw, pll_freq_mhz);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn set_schedule_tick(&mut self, tick: u32) {
+        unsafe {
+            core::ptr::write_volatile(reg32(REG_RF_SCHED_TICK), tick);
+        }
+    }
+
+    #[inline(always)]
+    fn enable_scheduled_command(&mut self, command: u8, tick: u32) {
+        self.set_schedule_tick(tick);
+        unsafe {
+            let mode = reg8(REG_RF_LL_CTRL_3);
+            let mut value = core::ptr::read_volatile(mode.cast_const());
+            value |= 0x04;
+            core::ptr::write_volatile(mode, value);
+            core::ptr::write_volatile(reg8(REG_RF_MODE_CONTROL), command);
+        }
+    }
+
+    #[inline(always)]
+    pub fn start_brx_at(&mut self, tick: u32) {
+        self.enable_scheduled_command(RF_CMD_BRX, tick);
+    }
+
+    #[inline(always)]
+    pub fn start_srx2tx_at(&mut self, tx_packet: &[u8], tick: u32) -> Result<(), RadioError> {
+        self.configure_tx_buffer(tx_packet)?;
+        self.enable_scheduled_command(RF_CMD_SRX2TX, tick);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn start_stx2rx_at(&mut self, tx_packet: &[u8], tick: u32) -> Result<(), RadioError> {
+        self.configure_tx_buffer(tx_packet)?;
+        self.enable_scheduled_command(RF_CMD_STX2RX, tick);
+        Ok(())
+    }
+
+    pub fn init_mode(&mut self, mode: RadioMode) -> Result<(), RadioError> {
+        self.reset_baseband();
+        self.set_tx_rx_off_auto_mode();
+        self.set_tx_rx_off();
+        self.reset_sn_nesn();
+        self.clear_all_irq_status();
+        self.clear_irq_mask(IrqFlags::ALL);
+        self.set_tx_pipe(0);
+        self.set_tx_settle_us(DEFAULT_TX_SETTLE_US);
+
+        match mode {
+            RadioMode::Ble1M => {
+                self.set_power(RadioPower::PLUS_3P23_DBM);
+                self.set_ble_channel(37)?;
+                self.set_ble_advertising_access_code();
+                self.set_ble_advertising_crc();
+            }
+            RadioMode::Zigbee250K => {
+                self.set_power(RadioPower::PLUS_3P23_DBM);
+                self.set_zigbee_channel(11)?;
+            }
+        }
+
+        Ok(())
     }
 
     #[inline(always)]
