@@ -29,6 +29,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tlsr82xx-buttons8258"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
 name = "tlsr82xx-hal"
 version = "0.1.0"
 dependencies = [

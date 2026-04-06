@@ -4,6 +4,7 @@ members = [
   "tlsr82xx-hal",
   "tlsr82xx-boards",
   "examples/blink8258",
+  "examples/buttons8258",
   "examples/rgb8258",
   "examples/uart8258",
 ]

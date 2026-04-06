@@ -20,12 +20,6 @@ extern "C" {
 #define PA7_INPUT_ENABLE                    1
 #define PULL_WAKEUP_SRC_PA7                 PM_PIN_PULLUP_1M
 
-#define BUTTON2                             GPIO_PD2
-#define PD2_FUNC                            AS_GPIO
-#define PD2_OUTPUT_ENABLE                   0
-#define PD2_INPUT_ENABLE                    1
-#define PULL_WAKEUP_SRC_PD2                 PM_PIN_PULLUP_10K
-
 #define LED_R                               GPIO_PC2
 #define LED_G                               GPIO_PC3
 #define LED_B                               GPIO_PC4
@@ -78,7 +72,6 @@ extern "C" {
 
 enum {
     VK_SW1 = 0x01,
-    VK_SW2 = 0x02,
 };
 
 #define KB_MAP_NORMAL { {VK_SW1,}, }

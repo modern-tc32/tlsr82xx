@@ -287,7 +287,7 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
         #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
         {
             if PORT <= PORT_D {
-                let addr = 0x0e + PORT + (BIT / 4);
+                let addr = 0x0e + (PORT * 2) + (BIT / 4);
                 let shift = (BIT % 4) * 2;
                 return Some((addr, shift));
             }
@@ -348,6 +348,33 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
 
     #[inline(always)]
     fn set_input_enabled(enabled: bool) {
+        #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+        {
+            match PORT {
+                PORT_B => {
+                    let mut value = analog::read(0xbd);
+                    if enabled {
+                        value |= Self::mask();
+                    } else {
+                        value &= !Self::mask();
+                    }
+                    analog::write(0xbd, value);
+                }
+                PORT_C => {
+                    let mut value = analog::read(0xc0);
+                    if enabled {
+                        value |= Self::mask();
+                    } else {
+                        value &= !Self::mask();
+                    }
+                    analog::write(0xc0, value);
+                }
+                _ => Self::modify_reg(0x01, enabled),
+            }
+            return;
+        }
+
+        #[allow(unreachable_code)]
         Self::modify_reg(0x01, enabled);
     }
 
@@ -364,6 +391,33 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
 
     #[inline(always)]
     fn set_drive_strength_raw(strong: bool) {
+        #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+        {
+            match PORT {
+                PORT_B => {
+                    let mut value = analog::read(0xbf);
+                    if strong {
+                        value |= Self::mask();
+                    } else {
+                        value &= !Self::mask();
+                    }
+                    analog::write(0xbf, value);
+                }
+                PORT_C => {
+                    let mut value = analog::read(0xc2);
+                    if strong {
+                        value |= Self::mask();
+                    } else {
+                        value &= !Self::mask();
+                    }
+                    analog::write(0xc2, value);
+                }
+                _ => Self::modify_reg(0x05, strong),
+            }
+            return;
+        }
+
+        #[allow(unreachable_code)]
         Self::modify_reg(0x05, strong);
     }
 
@@ -543,7 +597,7 @@ fn pull_addr_shift_raw(port: u8, bit: u8) -> Option<(u8, u8)> {
     #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
     {
         if port <= PORT_D {
-            let addr = 0x0e + port + (bit / 4);
+            let addr = 0x0e + (port * 2) + (bit / 4);
             let shift = (bit % 4) * 2;
             return Some((addr, shift));
         }
