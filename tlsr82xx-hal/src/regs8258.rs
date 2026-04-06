@@ -15,9 +15,9 @@ pub(crate) const REG_I2C_DI: usize = 0x0080_0006;
 pub(crate) const REG_I2C_CTRL: usize = 0x0080_0007;
 #[allow(dead_code)]
 pub(crate) const REG_SPI_DATA: usize = 0x0080_0008;
-#[allow(dead_code)]
 pub(crate) const REG_SPI_CTRL: usize = 0x0080_0009;
 pub(crate) const REG_SPI_SP: usize = 0x0080_000a;
+pub(crate) const REG_SPI_INV_CLK: usize = 0x0080_000b;
 
 pub(crate) const REG_RST0: usize = 0x0080_0060;
 pub(crate) const REG_RST1: usize = 0x0080_0061;
@@ -28,6 +28,7 @@ pub(crate) const REG_CLK_EN0: usize = 0x0080_0063;
 pub(crate) const REG_CLK_EN1: usize = 0x0080_0064;
 pub(crate) const REG_CLK_EN2: usize = 0x0080_0065;
 pub(crate) const FLD_CLK0_I2C_EN: u8 = 1 << 1;
+pub(crate) const FLD_CLK0_SPI_EN: u8 = 1 << 0;
 pub(crate) const REG_CLK_SEL: usize = 0x0080_0066;
 pub(crate) const REG_PWDN_CTRL: usize = 0x0080_006f;
 pub(crate) const REG_ANA_POWER_CTRL: usize = 0x0080_0074;
@@ -153,3 +154,8 @@ pub(crate) const FLD_I2C_CMD_READ_ID: u8 = 1 << 6;
 pub(crate) const FLD_I2C_CMD_ACK: u8 = 1 << 7;
 
 pub(crate) const FLD_SPI_ENABLE: u8 = 1 << 7;
+pub(crate) const FLD_SPI_MASTER_MODE_EN: u8 = 1 << 1;
+pub(crate) const FLD_SPI_DATA_OUT_DIS: u8 = 1 << 2;
+pub(crate) const FLD_SPI_RD: u8 = 1 << 3;
+pub(crate) const FLD_SPI_SHARE_MODE: u8 = 1 << 5;
+pub(crate) const FLD_SPI_BUSY: u8 = 1 << 6;

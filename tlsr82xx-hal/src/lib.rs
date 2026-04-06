@@ -31,6 +31,8 @@ pub mod pwm;
 pub mod radio;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod startup;
+#[cfg(feature = "chip-8258")]
+pub mod spi;
 pub mod timer;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod uart;
