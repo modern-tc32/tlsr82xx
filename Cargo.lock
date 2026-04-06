@@ -64,6 +64,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tlsr82xx-i2c8258"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
 name = "tlsr82xx-pac"
 version = "0.1.0"
 dependencies = [

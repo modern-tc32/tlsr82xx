@@ -21,6 +21,8 @@ pub mod clock;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod flash;
 pub mod gpio;
+#[cfg(feature = "chip-8258")]
+pub mod i2c;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod interrupt;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
