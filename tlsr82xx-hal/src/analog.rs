@@ -42,3 +42,15 @@ pub fn write(addr: u8, value: u8) {
         core::ptr::write_volatile(reg.add(2), 0);
     }
 }
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".ram_code.analog_read")]
+pub extern "C" fn analog_read(addr: u8) -> u8 {
+    read(addr)
+}
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".ram_code.analog_write")]
+pub extern "C" fn analog_write(addr: u8, value: u8) {
+    write(addr, value)
+}

@@ -45,6 +45,11 @@ static __attribute__((always_inline)) inline void flash_wakeup(void) {
     flash[1] = 1;
 }
 
+static __attribute__((always_inline)) inline void efuse_delay(void) {
+    for (volatile unsigned int i = 0; i < 110; ++i) {
+    }
+}
+
 static __attribute__((always_inline)) inline void init_icache(void) {
     uint32_t *tag = &_ictag_start_;
     while (tag < &_ictag_end_) {
@@ -58,9 +63,9 @@ static __attribute__((always_inline)) inline void init_icache(void) {
 }
 
 static __attribute__((always_inline)) inline void system_on_for_flash(void) {
-    *mmio32(0x800060) = 0xff000000u;
+    *mmio32(0x800060) = 0xff080000u;
     *mmio8(0x800064) = 0xffu;
-    *mmio8(0x800065) = 0xffu;
+    *mmio8(0x800065) = 0xf7u;
 }
 
 static __attribute__((always_inline)) inline void fill_stack_pattern(void) {
@@ -93,9 +98,10 @@ __attribute__((noreturn, section(".vectors.boot"))) void __tc32_boot_init(void) 
     init_icache();
     system_on_for_flash();
     flash_wakeup();
+    efuse_delay();
 
     wake_flag = analog_read_u8(0x7e);
-    if (wake_flag != 0) {
+    if ((wake_flag & 1u) != 0) {
         *mmio8(0x80063e) = (uint8_t)tl_multi_addr;
     } else {
         fill_stack_pattern();

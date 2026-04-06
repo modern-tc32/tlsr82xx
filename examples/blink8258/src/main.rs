@@ -12,25 +12,13 @@ mod platform;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    let _ = platform::drv_platform_init();
+    let _ = platform::init();
 
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
     let mut tick = timer::clock_time();
-    let mut led_y_on = true;
+    let mut led_y_on = false;
 
     loop {
-        if board.button1_pressed() {
-            drive_pin(&mut board.led_y, true);
-            drive_pin(&mut board.led_w, false);
-            continue;
-        }
-
-        if board.button2_pressed() {
-            drive_pin(&mut board.led_y, false);
-            drive_pin(&mut board.led_w, true);
-            continue;
-        }
-
         if timer::clock_time_exceed_us(tick, 500_000) {
             tick = timer::clock_time();
             led_y_on = !led_y_on;

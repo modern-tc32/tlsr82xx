@@ -592,6 +592,84 @@ pub(crate) fn set_pull_resistor_raw(raw_pin: u16, pull: analog::Pull) {
     analog::write(addr, value);
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn gpio_set_func(pin: u32, func: u32) {
+    let function = match func as u8 {
+        0 => PinFunction::Gpio,
+        3 => PinFunction::Uart,
+        20 => PinFunction::Pwm0,
+        21 => PinFunction::Pwm1,
+        22 => PinFunction::Pwm2,
+        23 => PinFunction::Pwm3,
+        24 => PinFunction::Pwm4,
+        25 => PinFunction::Pwm5,
+        _ => return,
+    };
+    set_function_raw(pin as u16, function);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gpio_set_input_en(pin: u32, value: u32) {
+    set_input_enabled_raw(pin as u16, value != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gpio_set_data_strength(pin: u32, value: u32) {
+    let (port, _, mask) = decode_raw_pin(pin as u16);
+    let strong = value != 0;
+
+    #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+    {
+        match port {
+            PORT_B => {
+                let mut reg = analog::read(0xbf);
+                if strong {
+                    reg |= mask;
+                } else {
+                    reg &= !mask;
+                }
+                analog::write(0xbf, reg);
+                return;
+            }
+            PORT_C => {
+                let mut reg = analog::read(0xc2);
+                if strong {
+                    reg |= mask;
+                } else {
+                    reg &= !mask;
+                }
+                analog::write(0xc2, reg);
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    modify_raw_port_reg(port, 0x05, mask, strong);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gpio_setup_up_down_resistor(pin: u32, pull: u32) {
+    let pull = match pull as u8 {
+        0 => analog::Pull::Floating,
+        1 => analog::Pull::PullUp1M,
+        2 => analog::Pull::PullDown100K,
+        3 => analog::Pull::PullUp10K,
+        _ => return,
+    };
+    set_pull_resistor_raw(pin as u16, pull);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn gpio_shutdown(pin: u32) {
+    let (port, _, mask) = decode_raw_pin(pin as u16);
+    modify_raw_port_reg(port, 0x03, mask, false);
+    set_input_enabled_raw(pin as u16, false);
+    modify_raw_port_reg(port, 0x02, mask, false);
+    set_function_raw(pin as u16, PinFunction::Gpio);
+    set_pull_resistor_raw(pin as u16, analog::Pull::Floating);
+}
+
 #[inline(always)]
 fn pull_addr_shift_raw(port: u8, bit: u8) -> Option<(u8, u8)> {
     #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
