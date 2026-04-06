@@ -582,6 +582,16 @@ pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
     modify_raw_port_reg(port, 0x01, mask, enabled);
 }
 
+pub(crate) fn set_output_enabled_raw(raw_pin: u16, enabled: bool) {
+    let (port, _, mask) = decode_raw_pin(raw_pin);
+    modify_raw_port_reg(port, 0x02, mask, !enabled);
+}
+
+pub(crate) fn write_data_raw(raw_pin: u16, high: bool) {
+    let (port, _, mask) = decode_raw_pin(raw_pin);
+    modify_raw_port_reg(port, 0x03, mask, high);
+}
+
 pub(crate) fn set_pull_resistor_raw(raw_pin: u16, pull: analog::Pull) {
     let (port, bit, _) = decode_raw_pin(raw_pin);
     let Some((addr, shift)) = pull_addr_shift_raw(port, bit) else {

@@ -42,6 +42,10 @@ pub(crate) const REG_GPIO_PE_IE: usize = 0x0080_05a1;
 pub(crate) const REG_GPIO_WAKEUP_IRQ: usize = 0x0080_05b5;
 pub(crate) const REG_DMA2_ADDR: usize = 0x0080_0c08;
 pub(crate) const REG_DMA2_ADDR_HI: usize = 0x0080_0c42;
+pub(crate) const REG_DFIFO2_ADDR: usize = 0x0080_0c08;
+pub(crate) const REG_DFIFO2_SIZE: usize = 0x0080_0c0a;
+pub(crate) const REG_DFIFO2_ADD_HI: usize = 0x0080_0c0b;
+pub(crate) const REG_DFIFO_MODE: usize = 0x0080_0c10;
 pub(crate) const REG_DFIFO0_ADDR: usize = 0x0080_0c40;
 pub(crate) const REG_DFIFO1_ADDR: usize = 0x0080_0c44;
 pub(crate) const REG_DFIFO0_SIZE: usize = 0x0080_0c48;
@@ -70,6 +74,23 @@ pub(crate) const REG_RF_SCHED_TICK: usize = 0x0080_0f18;
 
 pub(crate) const AREG_FLASH_VOLTAGE: u8 = 0x0c;
 pub(crate) const AREG_CLK_SETTING: u8 = 0x82;
+pub(crate) const AREG_ADC_SAMPLING_CLK_DIV: u8 = 0xf4;
+pub(crate) const AREG_ADC_VREF: u8 = 0xe7;
+pub(crate) const AREG_ADC_MISC_INPUT: u8 = 0xe8;
+pub(crate) const AREG_ADC_RESOLUTION_MISC: u8 = 0xec;
+pub(crate) const AREG_ADC_STATE_LENGTH_MC: u8 = 0xef;
+pub(crate) const AREG_ADC_STATE_LENGTH_C: u8 = 0xf0;
+pub(crate) const AREG_ADC_STATE_LENGTH_S: u8 = 0xf1;
+pub(crate) const AREG_ADC_CHANNEL_ENABLE: u8 = 0xf2;
+pub(crate) const AREG_ADC_VBAT_DIV: u8 = 0xf9;
+pub(crate) const AREG_ADC_AIN_SCALE: u8 = 0xfa;
+pub(crate) const AREG_ADC_PGA_BOOST: u8 = 0xfb;
+pub(crate) const AREG_ADC_PGA_CTRL: u8 = 0xfc;
+pub(crate) const AREG_ADC_MISC_L: u8 = 0xf7;
+pub(crate) const AREG_ADC_MISC_H: u8 = 0xf8;
+pub(crate) const FLD_CLK_24M_TO_SAR_EN: u8 = 1 << 5;
+pub(crate) const FLD_RST1_ADC: u8 = 1 << 3;
+pub(crate) const FLD_AUD_DFIFO2_IN: u8 = 1 << 2;
 
 // Local descriptive names: vendor pm_get_32k_tick() reads them as one counter.
 pub(crate) const ANA_32K_TICK_BYTE0: u8 = 0x40;

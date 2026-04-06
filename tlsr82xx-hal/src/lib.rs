@@ -13,6 +13,8 @@ compile_error!("enable one tlsr82xx-hal chip feature");
 
 pub use tlsr82xx_pac as pac;
 
+#[cfg(feature = "chip-8258")]
+pub mod adc;
 pub mod analog;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod clock;

@@ -3,6 +3,7 @@ members = [
   "tlsr82xx-pac",
   "tlsr82xx-hal",
   "tlsr82xx-boards",
+  "examples/adc8258",
   "examples/blink8258",
   "examples/buttons8258",
   "examples/flash8258",
