@@ -10,6 +10,7 @@ pub(crate) const REG_MSPI_CTRL: usize = 0x0080_000d;
 pub(crate) const REG_RST0: usize = 0x0080_0060;
 pub(crate) const REG_RST1: usize = 0x0080_0061;
 pub(crate) const REG_RST2: usize = 0x0080_0062;
+pub(crate) const FLD_RST1_ZB: u8 = 1 << 0;
 pub(crate) const REG_CLK_EN0: usize = 0x0080_0063;
 pub(crate) const REG_CLK_EN1: usize = 0x0080_0064;
 pub(crate) const REG_CLK_EN2: usize = 0x0080_0065;
@@ -33,8 +34,14 @@ pub(crate) const REG_DCDC_CTRL: usize = 0x0080_0750;
 
 pub(crate) const REG_RF_IRQ_MASK: usize = 0x0080_0f1c;
 pub(crate) const REG_RF_IRQ_STATUS: usize = 0x0080_0f20;
+pub(crate) const REG_RF_LL_CTRL_0: usize = 0x0080_0f02;
+pub(crate) const REG_RF_TX_SETTLE: usize = 0x0080_0f04;
+pub(crate) const REG_RF_LL_CTRL_2: usize = 0x0080_0f15;
+pub(crate) const REG_RF_LL_CTRL_3: usize = 0x0080_0f16;
 pub(crate) const REG_GPIO_PE_IE: usize = 0x0080_05a1;
 pub(crate) const REG_GPIO_WAKEUP_IRQ: usize = 0x0080_05b5;
+pub(crate) const REG_DMA2_ADDR: usize = 0x0080_0c08;
+pub(crate) const REG_DMA2_ADDR_HI: usize = 0x0080_0c42;
 pub(crate) const REG_DFIFO0_ADDR: usize = 0x0080_0c40;
 pub(crate) const REG_DFIFO1_ADDR: usize = 0x0080_0c44;
 pub(crate) const REG_DFIFO0_SIZE: usize = 0x0080_0c48;
@@ -45,6 +52,14 @@ pub(crate) const REG_WAKEUP_SRC: usize = 0x0080_0040;
 pub(crate) const REG_PM_INFO0: usize = 0x0080_0048;
 pub(crate) const REG_PM_INFO1: usize = 0x0080_004c;
 pub(crate) const REG_SUSPEND_RET_ADDR_HI: usize = 0x0080_060d;
+
+// RF helper aliases used by `rf_drv.h` as raw addresses without public names.
+pub(crate) const REG_RF_AUTO_MODE: usize = 0x0080_0f00;
+pub(crate) const REG_RF_SN: usize = 0x0080_0f01;
+pub(crate) const REG_RF_RX_MODE: usize = 0x0080_0428;
+pub(crate) const REG_RF_RSSI: usize = 0x0080_0441;
+pub(crate) const REG_RF_RX_STATUS: usize = 0x0080_0448;
+pub(crate) const REG_RF_POWER: usize = 0x0080_04a2;
 
 pub(crate) const AREG_FLASH_VOLTAGE: u8 = 0x0c;
 pub(crate) const AREG_CLK_SETTING: u8 = 0x82;
@@ -67,3 +82,17 @@ pub(crate) const ANA_REG_0X2A: u8 = 0x2a;
 // Meanings inferred from `usbhw.h`.
 pub(crate) const ANA_USB_DP_PULLUP: u8 = 0x0b;
 pub(crate) const ANA_USB_POWER: u8 = 0x34;
+
+pub(crate) const FLD_RF_IRQ_RX: u16 = 1 << 0;
+pub(crate) const FLD_RF_IRQ_TX: u16 = 1 << 1;
+pub(crate) const FLD_RF_IRQ_RX_TIMEOUT: u16 = 1 << 2;
+pub(crate) const FLD_RF_IRQ_RX_CRC_2: u16 = 1 << 4;
+pub(crate) const FLD_RF_IRQ_CMD_DONE: u16 = 1 << 5;
+pub(crate) const FLD_RF_IRQ_FSM_TIMEOUT: u16 = 1 << 6;
+pub(crate) const FLD_RF_IRQ_RETRY_HIT: u16 = 1 << 7;
+pub(crate) const FLD_RF_IRQ_TX_DS: u16 = 1 << 8;
+pub(crate) const FLD_RF_IRQ_RX_DR: u16 = 1 << 9;
+pub(crate) const FLD_RF_IRQ_FIRST_TIMEOUT: u16 = 1 << 10;
+pub(crate) const FLD_RF_IRQ_INVALID_PID: u16 = 1 << 11;
+pub(crate) const FLD_RF_IRQ_STX_TIMEOUT: u16 = 1 << 12;
+pub(crate) const FLD_RF_IRQ_ALL: u16 = 0x1fff;
