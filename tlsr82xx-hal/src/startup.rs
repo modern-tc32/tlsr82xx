@@ -5,8 +5,12 @@ use crate::regs8258::{
     ANA_32K_TICK_BYTE0, ANA_32K_TICK_BYTE1, ANA_32K_TICK_BYTE2, ANA_32K_TICK_BYTE3, ANA_REG_0X02,
     ANA_REG_0X27, ANA_REG_0X28, ANA_REG_0X29, ANA_REG_0X2A, ANA_REG_0X8A, ANA_REG_0X8C,
     ANA_USB_DP_PULLUP, ANA_USB_POWER, AREG_CLK_SETTING, REG_ANA_POWER_CTRL, REG_CLK_EN0,
-    REG_CLK_EN1, REG_CLK_EN2, REG_PM_INFO0, REG_PM_INFO1, REG_PWDN_CTRL, REG_RST0, REG_RST1,
-    REG_RST2, REG_SYSTEM_TICK,
+    REG_CLK_EN1, REG_CLK_EN2, REG_DCDC_CTRL, REG_DFIFO0_ADDR, REG_DFIFO0_SIZE, REG_DFIFO1_ADDR,
+    REG_DMA_CHN_EN, REG_GPIO_PE_IE, REG_GPIO_WAKEUP_IRQ, REG_IRQ_MASK, REG_MCU_WAKEUP_MASK,
+    REG_MSPI_CTRL, REG_MSPI_DATA, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG, REG_PWDN_CTRL,
+    REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI, REG_SYSTEM_TICK,
+    REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA,
+    REG_WAKEUP_SRC,
 };
 
 #[repr(i32)]
@@ -45,24 +49,12 @@ const MCU_STATUS_BOOT: u8 = 0;
 const MCU_STATUS_DEEPRET_BACK: u8 = 1;
 const MCU_STATUS_DEEP_BACK: u8 = 2;
 
-const REG_PM_RET_CTRL0: usize = 0x0080_0c40;
-const REG_PM_RET_CTRL1: usize = 0x0080_0c44;
-const REG_PM_RET_BYTE: usize = 0x0080_0c48;
-const REG_PM_RET_CLR: usize = 0x0080_0c20;
-const REG_DCDC_CTRL: usize = 0x0080_0750;
-const REG_PM_WAKE_FLAG: usize = 0x0080_007d;
-const REG_PM_WAIT: usize = 0x0080_074f;
-const REG_GPIO_FUNC_MUX: usize = 0x0080_05b5;
-const REG_PM_FUNC: usize = 0x0080_000c;
-const REG_PM_CTRL: usize = 0x0080_000d;
-const REG_TIMER_CTRL: usize = 0x0080_0623;
-const REG_TIMER0_TICK: usize = 0x0080_0630;
-const REG_TIMER1_TICK: usize = 0x0080_0634;
-const REG_TIMER2_TICK: usize = 0x0080_0638;
-const REG_SYSTEM_CTRL: usize = 0x0080_0078;
-const REG_WAKEUP_SRC: usize = 0x0080_0040;
-const REG_RF_CTRL: usize = 0x0080_0640;
-const REG_RF_IRQ_DONE: usize = 0x0080_0f20;
+const REG_PM_RET_CTRL0: usize = REG_DFIFO0_ADDR;
+const REG_PM_RET_CTRL1: usize = REG_DFIFO1_ADDR;
+const REG_PM_RET_BYTE: usize = REG_DFIFO0_SIZE;
+const REG_PM_RET_CLR: usize = REG_DMA_CHN_EN;
+const REG_PM_WAIT: usize = REG_SYSTEM_TICK_CTRL;
+const REG_RF_IRQ_DONE: usize = REG_RF_IRQ_STATUS;
 
 #[unsafe(no_mangle)]
 pub static mut sysTimerPerUs: u32 = 0;
@@ -404,8 +396,8 @@ pub extern "C" fn sleep_start() {
 
     analog::write(0x34, 0x87);
     unsafe {
-        core::ptr::write_volatile(reg8(REG_PM_CTRL), 0);
-        core::ptr::write_volatile(reg8(REG_PM_FUNC), 0xb9);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 0);
+        core::ptr::write_volatile(reg8(REG_MSPI_DATA), 0xb9);
     }
 
     for _ in 0..2 {
@@ -413,13 +405,13 @@ pub extern "C" fn sleep_start() {
     }
 
     unsafe {
-        core::ptr::write_volatile(reg8(REG_PM_CTRL), 1);
-        core::ptr::write_volatile(reg8(0x0080_05a1), 0);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 1);
+        core::ptr::write_volatile(reg8(REG_GPIO_PE_IE), 0);
     }
     analog::write(0x82, 0x0c);
 
     let ret_addr = unsafe {
-        let hi = core::ptr::read_volatile(reg8(0x0080_060d).cast_const()) as usize;
+        let hi = core::ptr::read_volatile(reg8(REG_SUSPEND_RET_ADDR_HI).cast_const()) as usize;
         let ptr = ((hi << 8) | 0x0084_0058) as *mut u32;
         let saved = core::ptr::read_volatile(ptr.cast_const());
         core::ptr::write_volatile(ptr, 0x06c0_06c0);
@@ -435,9 +427,9 @@ pub extern "C" fn sleep_start() {
     }
     analog::write(0x82, 0x64);
     unsafe {
-        core::ptr::write_volatile(reg8(0x0080_05a1), 0x0f);
-        core::ptr::write_volatile(reg8(REG_PM_CTRL), 0);
-        core::ptr::write_volatile(reg8(REG_PM_FUNC), 0xab);
+        core::ptr::write_volatile(reg8(REG_GPIO_PE_IE), 0x0f);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 0);
+        core::ptr::write_volatile(reg8(REG_MSPI_DATA), 0xab);
     }
 
     for _ in 0..2 {
@@ -445,7 +437,7 @@ pub extern "C" fn sleep_start() {
     }
 
     unsafe {
-        core::ptr::write_volatile(reg8(REG_PM_CTRL), 1);
+        core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 1);
     }
     analog::write(0x34, 0x80);
 
@@ -469,13 +461,13 @@ fn cpu_stall_wakeup_by_timer_common(tick_addr: usize, tick: u32, mask: u32, time
         mode8 |= timer_bit;
         core::ptr::write_volatile(ctrl8, mode8);
 
-        let irq = reg32(REG_SYSTEM_CTRL);
+        let irq = reg32(REG_MCU_WAKEUP_MASK);
         core::ptr::write_volatile(irq, core::ptr::read_volatile(irq.cast_const()) | mask);
-        core::ptr::write_volatile(reg8(REG_TIMER_CTRL), mask as u8);
+        core::ptr::write_volatile(reg8(REG_TMR_STA), mask as u8);
         core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x80);
         core::hint::spin_loop();
         core::hint::spin_loop();
-        core::ptr::write_volatile(reg8(REG_TIMER_CTRL), mask as u8);
+        core::ptr::write_volatile(reg8(REG_TMR_STA), mask as u8);
 
         let mut final_ctrl = core::ptr::read_volatile(ctrl8.cast_const());
         final_ctrl &= !timer_bit;
@@ -485,35 +477,35 @@ fn cpu_stall_wakeup_by_timer_common(tick_addr: usize, tick: u32, mask: u32, time
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_stall_wakeup_by_timer0(tick: u32) {
-    cpu_stall_wakeup_by_timer_common(REG_TIMER0_TICK, tick, 1, 0x01);
+    cpu_stall_wakeup_by_timer_common(REG_TMR0_TICK, tick, 1, 0x01);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_stall_wakeup_by_timer1(tick: u32) {
-    cpu_stall_wakeup_by_timer_common(REG_TIMER1_TICK, tick, 2, 0x08);
+    cpu_stall_wakeup_by_timer_common(REG_TMR1_TICK, tick, 2, 0x08);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_stall_wakeup_by_timer2(tick: u32) {
     unsafe {
-        core::ptr::write_volatile(reg32(REG_TIMER2_TICK), 0);
-        core::ptr::write_volatile(reg32(REG_TIMER2_TICK - 12), tick);
-        let ctrl = reg16(REG_TIMER2_TICK - 12);
+        core::ptr::write_volatile(reg32(REG_TMR2_TICK), 0);
+        core::ptr::write_volatile(reg32(REG_TMR2_TICK - 12), tick);
+        let ctrl = reg16(REG_TMR2_TICK - 12);
         let mut mode = core::ptr::read_volatile(ctrl.cast_const());
         mode &= 0xff7d;
         core::ptr::write_volatile(ctrl, mode);
-        let ctrl8 = reg8(REG_TIMER2_TICK - 12);
+        let ctrl8 = reg8(REG_TMR2_TICK - 12);
         let mut mode8 = core::ptr::read_volatile(ctrl8.cast_const());
         mode8 |= 0x40;
         core::ptr::write_volatile(ctrl8, mode8);
 
-        let irq = reg32(REG_SYSTEM_CTRL);
+        let irq = reg32(REG_MCU_WAKEUP_MASK);
         core::ptr::write_volatile(irq, core::ptr::read_volatile(irq.cast_const()) | 4);
-        core::ptr::write_volatile(reg8(REG_TIMER_CTRL), 4);
+        core::ptr::write_volatile(reg8(REG_TMR_STA), 4);
         core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x80);
         core::hint::spin_loop();
         core::hint::spin_loop();
-        core::ptr::write_volatile(reg8(REG_TIMER_CTRL), 4);
+        core::ptr::write_volatile(reg8(REG_TMR_STA), 4);
 
         let mut final_ctrl = core::ptr::read_volatile(ctrl8.cast_const());
         final_ctrl &= !0x40;
@@ -526,9 +518,9 @@ pub extern "C" fn cpu_stall_wakeup_by_timer2(tick: u32) {
 pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) -> u32 {
     if interval_us != 0 {
         unsafe {
-            core::ptr::write_volatile(reg32(REG_TIMER1_TICK), 0);
-            core::ptr::write_volatile(reg32(REG_TIMER1_TICK - 12), interval_us.wrapping_mul(sysclktick));
-            let ctrl = reg8(REG_TIMER1_TICK - 8);
+            core::ptr::write_volatile(reg32(REG_TMR1_TICK), 0);
+            core::ptr::write_volatile(reg32(REG_TMR1_TICK - 12), interval_us.wrapping_mul(sysclktick));
+            let ctrl = reg8(REG_TMR1_TICK - 8);
             let mut value = core::ptr::read_volatile(ctrl.cast_const());
             value &= !0x30;
             value |= 0x08;
@@ -537,29 +529,29 @@ pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) 
     }
 
     unsafe {
-        let irq = reg32(REG_SYSTEM_CTRL);
+        let irq = reg32(REG_MCU_WAKEUP_MASK);
         core::ptr::write_volatile(irq, core::ptr::read_volatile(irq.cast_const()) | wakeup_src);
 
-        let rf = reg32(REG_RF_CTRL);
-        let mut rf_masked = core::ptr::read_volatile(rf.cast_const());
+        let irq_mask = reg32(REG_IRQ_MASK);
+        let mut rf_masked = core::ptr::read_volatile(irq_mask.cast_const());
         rf_masked &= 0xffff_dfff;
         rf_masked &= !0x2;
-        core::ptr::write_volatile(rf, rf_masked);
+        core::ptr::write_volatile(irq_mask, rf_masked);
 
         core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x80);
         core::hint::spin_loop();
         core::hint::spin_loop();
 
         if interval_us != 0 {
-            core::ptr::write_volatile(reg32(REG_TIMER1_TICK), 0);
-            let ctrl = reg8(REG_TIMER1_TICK - 20);
+            core::ptr::write_volatile(reg32(REG_TMR1_TICK), 0);
+            let ctrl = reg8(REG_TMR1_TICK - 20);
             let mut value = core::ptr::read_volatile(ctrl.cast_const());
             value &= !0x08;
             core::ptr::write_volatile(ctrl, value);
         }
 
         let status = core::ptr::read_volatile(reg32(REG_WAKEUP_SRC).cast_const());
-        core::ptr::write_volatile(reg8(REG_TIMER_CTRL), 2);
+        core::ptr::write_volatile(reg8(REG_TMR_STA), 2);
         core::ptr::write_volatile(reg16(REG_RF_IRQ_DONE), 0xffff);
         status
     }
@@ -610,7 +602,7 @@ pub extern "C" fn cpu_wakeup_init() {
         core::ptr::write_volatile(crate::mmio::reg16(REG_DCDC_CTRL), 0);
     }
 
-    if unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKE_FLAG).cast_const()) } == 1 {
+    if unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) } == 1 {
         analog::write(0x01, 0x3c);
     } else {
         analog::write(0x01, 0x4c);
@@ -675,8 +667,8 @@ pub extern "C" fn cpu_wakeup_init() {
     unsafe {
         core::ptr::write_volatile(reg8(REG_PM_RET_CLR), 0x00);
         core::ptr::write_volatile(reg8(REG_PM_RET_CLR + 1), 0x00);
-        let value = core::ptr::read_volatile(reg8(REG_GPIO_FUNC_MUX).cast_const()) | 0x0c;
-        core::ptr::write_volatile(reg8(REG_GPIO_FUNC_MUX), value);
+        let value = core::ptr::read_volatile(reg8(REG_GPIO_WAKEUP_IRQ).cast_const()) | 0x0c;
+        core::ptr::write_volatile(reg8(REG_GPIO_WAKEUP_IRQ), value);
     }
     let _ = (ANA_REG_0X8A, REG_PWDN_CTRL);
 }
