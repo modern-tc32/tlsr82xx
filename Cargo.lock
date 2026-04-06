@@ -121,6 +121,7 @@ dependencies = [
 name = "tlsr82xx-rgb8258"
 version = "0.1.0"
 dependencies = [
+ "embedded-hal",
  "tlsr82xx-boards",
  "tlsr82xx-hal",
 ]

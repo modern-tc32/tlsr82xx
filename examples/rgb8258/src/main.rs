@@ -3,10 +3,11 @@
 
 use core::panic::PanicInfo;
 
+use embedded_hal::pwm::SetDutyCycle;
 use tlsr82xx_boards::tb03f;
 use tlsr82xx_hal::gpio::GpioExt;
 use tlsr82xx_hal::pac;
-use tlsr82xx_hal::pwm::{Channel, PwmExt};
+use tlsr82xx_hal::pwm::PwmExt;
 use tlsr82xx_hal::timer;
 
 mod platform;
@@ -21,13 +22,14 @@ pub extern "C" fn main() -> i32 {
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut pins = peripherals.gpio.split();
     tb03f::configure_rgb_pins(&mut pins);
-    let mut pwm = peripherals.pwm.constrain();
-    pwm.configure(Channel::Pwm0, PWM_PERIOD_TICKS, 0);
-    pwm.configure(Channel::Pwm1, PWM_PERIOD_TICKS, 0);
-    pwm.configure(Channel::Pwm2, PWM_PERIOD_TICKS, 0);
-    pwm.enable(Channel::Pwm0);
-    pwm.enable(Channel::Pwm1);
-    pwm.enable(Channel::Pwm2);
+    let pwm = peripherals.pwm.constrain();
+    let mut channels = pwm.split();
+    channels.pwm0.configure(PWM_PERIOD_TICKS, 0);
+    channels.pwm1.configure(PWM_PERIOD_TICKS, 0);
+    channels.pwm2.configure(PWM_PERIOD_TICKS, 0);
+    channels.pwm0.enable();
+    channels.pwm1.enable();
+    channels.pwm2.enable();
 
     let mut phase = 0u16;
     let mut tick = timer::clock_time();
@@ -37,9 +39,9 @@ pub extern "C" fn main() -> i32 {
             tick = timer::clock_time();
             phase = phase.wrapping_add(1) % (BRIGHTNESS_MAX * 6);
             let rgb = wheel(phase);
-            pwm.set_duty_8bit(Channel::Pwm0, rgb.r);
-            pwm.set_duty_8bit(Channel::Pwm1, rgb.g);
-            pwm.set_duty_8bit(Channel::Pwm2, rgb.b);
+            let _ = channels.pwm0.set_duty_cycle_fraction(u16::from(rgb.r), 255);
+            let _ = channels.pwm1.set_duty_cycle_fraction(u16::from(rgb.g), 255);
+            let _ = channels.pwm2.set_duty_cycle_fraction(u16::from(rgb.b), 255);
         }
     }
 }
