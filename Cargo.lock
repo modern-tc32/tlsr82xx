@@ -38,6 +38,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tlsr82xx-flash8258"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
 name = "tlsr82xx-hal"
 version = "0.1.0"
 dependencies = [
@@ -76,6 +85,15 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "vcell",
+]
+
+[[package]]
+name = "tlsr82xx-radio8258"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
 ]
 
 [[package]]
