@@ -2,10 +2,7 @@ use crate::analog;
 use crate::mmio::reg8;
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{AREG_FLASH_VOLTAGE, REG_CLK_SEL};
-
-unsafe extern "C" {
-    static mut tl_24mrc_cal: u8;
-}
+use crate::startup::tl_24mrc_cal;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,20 +115,10 @@ pub fn init(clock: SysClock) {
 
 #[inline(always)]
 pub fn current() -> u8 {
-    unsafe {
-        unsafe extern "C" {
-            static system_clk_type: u8;
-        }
-        system_clk_type
-    }
+    unsafe { system_clk_type }
 }
 
 #[inline(always)]
 pub fn current_mhz() -> u8 {
-    unsafe {
-        unsafe extern "C" {
-            static system_clk_mHz: u8;
-        }
-        system_clk_mHz
-    }
+    unsafe { system_clk_mHz }
 }

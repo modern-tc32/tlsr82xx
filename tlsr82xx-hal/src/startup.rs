@@ -105,12 +105,7 @@ pub static mut pm_bit_info_1: u8 = 0;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn efuse_sys_check(info1: u32) {
-    let info0 = unsafe {
-        unsafe extern "C" {
-            fn pm_get_info0() -> u32;
-        }
-        pm_get_info0()
-    };
+    let info0 = pm_get_info0();
     let low_nibble = info0 & 0x0f;
     if low_nibble > 9 {
         unsafe {
@@ -292,10 +287,6 @@ pub extern "C" fn start_reboot() -> ! {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".ram_code.pm_wait_xtal_ready")]
 pub extern "C" fn pm_wait_xtal_ready() {
-    unsafe extern "C" {
-        fn clock_time() -> u32;
-    }
-
     let loops = unsafe { g_pm_xtal_stable_loopnum };
     let mut i = 0u32;
     loop {
@@ -303,12 +294,12 @@ pub extern "C" fn pm_wait_xtal_ready() {
             return;
         }
 
-        let start = unsafe { clock_time() };
+        let start = clock_time();
         for _ in 0..60 {
             core::hint::spin_loop();
         }
 
-        let delta = unsafe { clock_time() }.wrapping_sub(start);
+        let delta = clock_time().wrapping_sub(start);
         if delta > 320 {
             if i == loops {
                 start_reboot();
@@ -323,7 +314,6 @@ pub extern "C" fn pm_wait_xtal_ready() {
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_wakeup_no_deepretn_back_init() {
     unsafe extern "C" {
-        fn efuse_sys_check(info1: u32);
         fn flash_vdd_f_calib();
     }
 
@@ -332,7 +322,7 @@ pub extern "C" fn cpu_wakeup_no_deepretn_back_init() {
 
     let info1 = pm_get_info1();
     if (info1 & 0xc0) != 0xc0 {
-        unsafe { efuse_sys_check(info1) };
+        efuse_sys_check(info1);
         unsafe { flash_vdd_f_calib() };
         return;
     }
@@ -679,12 +669,7 @@ pub fn init() -> StartupState {
     interrupt::clear_mask(interrupt::ALL_IRQS);
     interrupt::clear_all_irq_sources();
 
-    unsafe {
-        unsafe extern "C" {
-            fn cpu_wakeup_init();
-        }
-        cpu_wakeup_init();
-    }
+    cpu_wakeup_init();
     clock::init(clock::SysClock::Crystal48M);
     unsafe {
         sysTimerPerUs = timer::SYS_TICK_PER_US;
