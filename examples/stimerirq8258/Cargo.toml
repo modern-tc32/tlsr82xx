@@ -10,9 +10,10 @@ name = "tlsr82xx-stimerirq8258"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["timer0-irq-shim"]
+timer0-irq-shim = ["tlsr82xx-hal/custom-irq-handler"]
 
 [dependencies]
 embedded-hal = "1"
-tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258", "custom-irq-handler"] }
+tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }
 tlsr82xx-boards = { path = "../../tlsr82xx-boards", features = ["chip-8258"] }

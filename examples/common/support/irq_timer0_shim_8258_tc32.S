@@ -5,6 +5,8 @@
     .align 2
     .globl irq_handler
     .thumb_func
+    .extern tlsr82xx_timer0_irq_tick
+    .extern TLSR82XX_TIMER0_IRQ_PERIOD_TICKS
 irq_handler:
     ldr r0, =0x00800648
     movs r1, #1
@@ -17,7 +19,8 @@ irq_handler:
     movs r1, #0
     str r1, [r0]
 
-    ldr r0, =0x00f42400
+    ldr r0, =TLSR82XX_TIMER0_IRQ_PERIOD_TICKS
+    ldr r0, [r0]
     ldr r1, =0x00800624
     str r0, [r1]
 
@@ -27,15 +30,8 @@ irq_handler:
     orrs r1, r2
     str r1, [r0]
 
-    ldr r0, =stimerirq8258_irq_phase
     push {r14}
-    bl stimerirq8258_rust_handler
+    bl tlsr82xx_timer0_irq_tick
     pop {r0}
     mov lr, r0
     bx lr
-
-    .section .bss
-    .align 1
-    .globl stimerirq8258_irq_phase
-stimerirq8258_irq_phase:
-    .byte 0
