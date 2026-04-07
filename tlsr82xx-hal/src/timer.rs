@@ -64,9 +64,16 @@ pub fn disable_system_timer_irq() {
 
 #[cfg(feature = "chip-8258")]
 #[inline(always)]
+pub fn set_timer0_tick(tick: u32) {
+    unsafe {
+        core::ptr::write_volatile(reg32(REG_TMR0_TICK), tick);
+    }
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
 pub fn set_timer0_irq_capture(tick: u32) {
     unsafe {
-        core::ptr::write_volatile(reg32(REG_TMR0_TICK), 0);
         core::ptr::write_volatile(reg32(REG_TMR0_CAPT), tick);
     }
 }

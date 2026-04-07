@@ -14,5 +14,5 @@ default = []
 
 [dependencies]
 embedded-hal = "1"
-tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }
+tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258", "custom-irq-handler"] }
 tlsr82xx-boards = { path = "../../tlsr82xx-boards", features = ["chip-8258"] }

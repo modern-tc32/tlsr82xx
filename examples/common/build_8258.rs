@@ -8,6 +8,10 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TC32_LLVM_BIN");
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"));
+    let package_name = manifest_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .expect("example directory name");
     let examples_dir = manifest_dir.parent().expect("example crate lives under examples/");
     let common_dir = examples_dir.join("common");
     let repo_root = examples_dir
@@ -80,6 +84,20 @@ fn main() {
         }
         command.arg("-o").arg(&object).arg(source);
         run(&mut command, source);
+        objects.push(object);
+    }
+
+    if package_name == "stimerirq8258" {
+        let source = common_dir.join("support/irq_shim_8258_tc32.S");
+        println!("cargo:rerun-if-changed={}", source.display());
+        let object = object_dir.join(object_name(&source));
+        let mut command = Command::new(&clang);
+        command.arg("--target=tc32").arg("-c").args(asm_flags);
+        for dir in &include_dirs {
+            command.arg("-I").arg(dir);
+        }
+        command.arg("-o").arg(&object).arg(&source);
+        run(&mut command, &source);
         objects.push(object);
     }
 
