@@ -6,7 +6,6 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=TC32_LLVM_BIN");
-    println!("cargo:rerun-if-env-changed=TC32_SDK_DIR");
     println!("cargo:rerun-if-env-changed=TC32_CLANG_COMPAT_DIR");
 
     let manifest_dir =
@@ -17,7 +16,6 @@ fn main() {
         .parent()
         .and_then(Path::parent)
         .expect("workspace root lives under repository root");
-    let sdk_dir = resolve_path("TC32_SDK_DIR", repo_root, || repo_root.join("tl_zigbee_sdk"));
     let clang_compat_dir = resolve_path("TC32_CLANG_COMPAT_DIR", repo_root, || {
         repo_root.join("test_lamp/cmake_example/clang_compat")
     });
@@ -66,7 +64,7 @@ fn main() {
     ];
 
     let sources = [
-        sdk_dir.join("platform/boot/link_cfg.S"),
+        common_dir.join("support/link_cfg.S"),
         clang_compat_dir.join("mulsi3.c"),
         common_dir.join("support/irq_handler_stub.c"),
         common_dir.join("support/tc32_boot_init.c"),
@@ -100,11 +98,6 @@ fn main() {
         println!("cargo:rerun-if-changed={}", header.display());
     }
 
-    let drivers = sdk_dir.join("platform/lib/libdrivers_8258.a");
-    println!("cargo:rerun-if-changed={}", drivers.display());
-    let filtered_drivers = filter_vendor_archive(&drivers, &out_dir, repo_root);
-    let soft_fp = sdk_dir.join("platform/tc32/libsoft-fp.a");
-
     println!("cargo:rustc-link-arg=--gc-sections");
     println!("cargo:rustc-link-arg=-u");
     println!("cargo:rustc-link-arg=ss_apsmeSwitchKeyReq");
@@ -119,49 +112,6 @@ fn main() {
     for object in &objects {
         println!("cargo:rustc-link-arg={}", object.display());
     }
-    println!("cargo:rustc-link-arg=--start-group");
-    println!("cargo:rustc-link-arg={}", filtered_drivers.display());
-    println!("cargo:rustc-link-arg={}", soft_fp.display());
-    println!("cargo:rustc-link-arg=--end-group");
-}
-
-fn filter_vendor_archive(drivers: &Path, out_dir: &Path, repo_root: &Path) -> PathBuf {
-    let ar = repo_root.join("tc32-vendor/bin/tc32-elf-ar");
-    let extract_dir = out_dir.join("libdrivers_8258_extract");
-    let filtered = out_dir.join("libdrivers_8258_noanalog.a");
-
-    if filtered.exists() {
-        fs::remove_file(&filtered).expect("remove previous filtered drivers archive");
-    }
-    if extract_dir.exists() {
-        fs::remove_dir_all(&extract_dir).expect("remove previous extracted drivers dir");
-    }
-    fs::create_dir_all(&extract_dir).expect("create extracted drivers dir");
-
-    let mut extract = Command::new(&ar);
-    extract.arg("x").arg(drivers);
-    extract.current_dir(&extract_dir);
-    run_named(&mut extract, "extract vendor drivers archive");
-
-    let mut members: Vec<PathBuf> = fs::read_dir(&extract_dir)
-        .expect("read extracted vendor drivers dir")
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|path| path.is_file())
-        .filter(|path| {
-            !matches!(
-                path.file_name().and_then(|s| s.to_str()),
-                Some("analog.o" | "clock.o" | "gpio.o" | "pm.o")
-            )
-        })
-        .collect();
-    members.sort();
-
-    let mut archive = Command::new(&ar);
-    archive.arg("crs").arg(&filtered);
-    archive.args(&members);
-    run_named(&mut archive, "create filtered vendor drivers archive");
-
-    filtered
 }
 
 fn resolve_path(key: &str, repo_root: &Path, default: impl FnOnce() -> PathBuf) -> PathBuf {
@@ -191,14 +141,5 @@ fn run(command: &mut Command, source: &Path) {
         .unwrap_or_else(|err| panic!("failed to launch compiler for {}: {err}", source.display()));
     if !status.success() {
         panic!("compilation failed for {}", source.display());
-    }
-}
-
-fn run_named(command: &mut Command, what: &str) {
-    let status = command
-        .status()
-        .unwrap_or_else(|err| panic!("failed to launch {what}: {err}"));
-    if !status.success() {
-        panic!("{what} failed");
     }
 }

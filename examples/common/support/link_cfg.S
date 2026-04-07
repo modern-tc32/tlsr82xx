@@ -1,0 +1,11 @@
+#include "version_cfg.h"
+
+LINK_CFG:
+	.equ __BOOT_LOADER_IMAGE,	 	IS_BOOT_LOADER_IMAGE
+	.equ __FW_RAMCODE_SIZE_MAX,		RESV_FOR_APP_RAM_CODE_SIZE
+	.equ __FW_OFFSET,			 	IMAGE_OFFSET
+
+	.global __BOOT_LOADER_IMAGE
+	.global __FW_OFFSET
+	.global __FW_RAMCODE_SIZE_MAX
+LINK_CFG_END:
