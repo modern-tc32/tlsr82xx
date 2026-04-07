@@ -28,14 +28,7 @@ fn main() {
     let object_dir = out_dir.join("objects");
     fs::create_dir_all(&object_dir).expect("create object dir");
 
-    let include_dirs = [
-        common_dir.join("include"),
-        sdk_dir.join("apps/common"),
-        sdk_dir.join("proj"),
-        sdk_dir.join("proj/common"),
-        sdk_dir.join("platform"),
-        sdk_dir.join("platform/chip_8258"),
-    ];
+    let include_dirs = [common_dir.join("include")];
 
     let common_flags = [
         "-DMCU_CORE_8258=1",
@@ -76,11 +69,8 @@ fn main() {
         sdk_dir.join("platform/boot/link_cfg.S"),
         clang_compat_dir.join("mulsi3.c"),
         common_dir.join("support/irq_handler_stub.c"),
-        common_dir.join("support/memset.c"),
-        common_dir.join("support/indirect_call_r3.c"),
         common_dir.join("support/tc32_boot_init.c"),
         common_dir.join("support/cstartup_8258.S"),
-        common_dir.join("support/platform_init_8258.c"),
     ];
     let mut objects = Vec::new();
     for source in &sources {
@@ -103,8 +93,6 @@ fn main() {
     }
 
     for header in [
-        common_dir.join("include/app_cfg.h"),
-        common_dir.join("include/board_8258_tb_03f.h"),
         common_dir.join("include/comm_cfg.h"),
         common_dir.join("include/version_cfg.h"),
         common_dir.join("boot_8258_minimal_lld.link"),
