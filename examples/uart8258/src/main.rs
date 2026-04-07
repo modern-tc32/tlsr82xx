@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 
-use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use embedded_io::Write as _;
 use tlsr82xx_boards::tb03f;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
@@ -20,15 +20,16 @@ pub extern "C" fn main() -> i32 {
     let mut uart = peripherals.uart.constrain();
     uart.configure(Config::new(115_200, 48_000_000));
 
-    let _ = writeln!(uart, "tlsr82xx uart8258 ready");
+    let _ = embedded_io::Write::write_fmt(&mut uart, format_args!("tlsr82xx uart8258 ready\r\n"));
+    let _ = uart.write_all(b"embedded-io write_all ready\r\n");
     let mut counter = 0u32;
     let mut tick = timer::clock_time();
 
     loop {
         if timer::clock_time_exceed_us(tick, 500_000) {
             tick = timer::clock_time();
-            let _ = writeln!(uart, "tick {}", counter);
-            uart.flush();
+            let _ = embedded_io::Write::write_fmt(&mut uart, format_args!("tick {}\r\n", counter));
+            let _ = embedded_io::Write::flush(&mut uart);
             counter = counter.wrapping_add(1);
         }
     }

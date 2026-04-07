@@ -1,5 +1,7 @@
 use core::fmt;
 
+use embedded_io::{ErrorType as IoErrorType, Read as IoRead, Write as IoWrite};
+
 use crate::{analog, gpio, gpio::PinFunction, pac};
 
 const RESET_BASE: usize = 0x0080_0060;
@@ -185,6 +187,18 @@ impl Uart {
         }
     }
 
+    #[inline(always)]
+    pub fn read_ready(&self) -> bool {
+        unsafe { (core::ptr::read_volatile(Self::reg8(0x0d).cast_const()) & 0x0f) != 0 }
+    }
+
+    pub fn read_byte(&mut self) -> u8 {
+        while !self.read_ready() {
+            core::hint::spin_loop();
+        }
+        unsafe { core::ptr::read_volatile(Self::reg8(0x00).cast_const()) }
+    }
+
     pub fn write_byte(&mut self, byte: u8) {
         while self.tx_fifo_count() > 7 {
             core::hint::spin_loop();
@@ -212,6 +226,41 @@ impl fmt::Write for Uart {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_bytes(s.as_bytes());
         Ok(())
+    }
+}
+
+impl IoErrorType for Uart {
+    type Error = core::convert::Infallible;
+}
+
+impl IoWrite for Uart {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
+        self.write_bytes(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        Uart::flush(self);
+        Ok(())
+    }
+}
+
+impl IoRead for Uart {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let mut count = 0usize;
+        buf[count] = self.read_byte();
+        count += 1;
+
+        while count < buf.len() && self.read_ready() {
+            buf[count] = self.read_byte();
+            count += 1;
+        }
+
+        Ok(count)
     }
 }
 
