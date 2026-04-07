@@ -4,6 +4,9 @@ use crate::regs8258::{REG_IRQ_EN, REG_IRQ_MASK, REG_IRQ_SRC, REG_RF_IRQ_MASK, RE
 
 pub const ALL_IRQS: u32 = 0xffff_ffff;
 
+#[unsafe(no_mangle)]
+pub extern "C" fn irq_handler() {}
+
 #[inline(always)]
 pub fn enable() -> bool {
     unsafe {

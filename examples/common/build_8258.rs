@@ -6,8 +6,6 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=TC32_LLVM_BIN");
-    println!("cargo:rerun-if-env-changed=TC32_CLANG_COMPAT_DIR");
-
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"));
     let examples_dir = manifest_dir.parent().expect("example crate lives under examples/");
@@ -16,9 +14,6 @@ fn main() {
         .parent()
         .and_then(Path::parent)
         .expect("workspace root lives under repository root");
-    let clang_compat_dir = resolve_path("TC32_CLANG_COMPAT_DIR", repo_root, || {
-        repo_root.join("test_lamp/cmake_example/clang_compat")
-    });
     let llvm_bin =
         resolve_path("TC32_LLVM_BIN", repo_root, || repo_root.join("build-tc32-triple/bin"));
     let clang = llvm_bin.join("clang");
@@ -65,8 +60,7 @@ fn main() {
 
     let sources = [
         common_dir.join("support/link_cfg.S"),
-        clang_compat_dir.join("mulsi3.c"),
-        common_dir.join("support/irq_handler_stub.c"),
+        common_dir.join("support/mulsi3.c"),
         common_dir.join("support/tc32_boot_init.c"),
         common_dir.join("support/cstartup_8258.S"),
     ];
