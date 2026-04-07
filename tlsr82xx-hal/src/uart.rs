@@ -2,7 +2,7 @@ use core::fmt;
 
 use embedded_io::{ErrorType as IoErrorType, Read as IoRead, Write as IoWrite};
 
-use crate::{analog, gpio, gpio::PinFunction, pac};
+use crate::{analog, clock, gpio, gpio::PinFunction, pac};
 
 const RESET_BASE: usize = 0x0080_0060;
 const UART_BASE: usize = 0x0080_0090;
@@ -25,7 +25,6 @@ pub enum StopBits {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Config {
     pub baudrate: u32,
-    pub sysclk_hz: u32,
     pub parity: Parity,
     pub stop_bits: StopBits,
 }
@@ -70,10 +69,9 @@ impl Pins {
 }
 
 impl Config {
-    pub const fn new(baudrate: u32, sysclk_hz: u32) -> Self {
+    pub const fn new(baudrate: u32) -> Self {
         Self {
             baudrate,
-            sysclk_hz,
             parity: Parity::None,
             stop_bits: StopBits::One,
         }
@@ -144,7 +142,7 @@ impl Uart {
     }
 
     pub fn configure(&mut self, config: Config) {
-        let (div, bwpc) = compute_baud_params(config.sysclk_hz, config.baudrate);
+        let (div, bwpc) = compute_baud_params(current_sysclk_hz(), config.baudrate);
 
         unsafe {
             // ctrl0: keep DMA/IRQ disabled, update bit width per clock.
@@ -220,6 +218,11 @@ impl Uart {
     fn tx_fifo_count(&self) -> u8 {
         unsafe { core::ptr::read_volatile(Self::reg8(0x0c).cast_const()) >> 4 }
     }
+}
+
+#[inline(always)]
+fn current_sysclk_hz() -> u32 {
+    u32::from(clock::current_mhz()) * 1_000_000
 }
 
 impl fmt::Write for Uart {

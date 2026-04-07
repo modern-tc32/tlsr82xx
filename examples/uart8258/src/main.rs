@@ -18,7 +18,7 @@ pub extern "C" fn main() -> i32 {
 
     let peripherals = unsafe { pac::Peripherals::steal() };
     let mut uart = peripherals.uart.constrain();
-    uart.configure(Config::new(115_200, 48_000_000));
+    uart.configure(Config::new(115_200));
 
     let _ = embedded_io::Write::write_fmt(&mut uart, format_args!("tlsr82xx uart8258 ready\r\n"));
     let _ = uart.write_all(b"embedded-io write_all ready\r\n");
