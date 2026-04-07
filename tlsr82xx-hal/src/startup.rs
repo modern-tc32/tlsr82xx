@@ -13,6 +13,24 @@ use crate::regs8258::{
     REG_WAKEUP_SRC,
 };
 
+unsafe extern "C" {
+    static mut _dstored_: u32;
+    static mut _start_data_: u32;
+    static mut _end_data_: u32;
+    static mut _start_bss_: u32;
+    static mut _end_bss_: u32;
+    static mut _custom_stored_: u32;
+    static mut _start_custom_data_: u32;
+    static mut _end_custom_data_: u32;
+    static mut _start_custom_bss_: u32;
+    static mut _end_custom_bss_: u32;
+    static mut _stack_end_: u32;
+    static mut _ictag_start_: u32;
+    static mut _ictag_end_: u32;
+    static mut _ramcode_size_align_256_: u32;
+    fn main() -> i32;
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartupState {
@@ -199,6 +217,153 @@ pub static mut g_pm_xtal_stable_loopnum: u32 = 10;
 
 #[unsafe(no_mangle)]
 pub static mut g_pm_xtal_stable_suspend_nopnum: u32 = 200;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __tc32_fill_stack_pattern(mut start: *mut u32, end: *mut u32) {
+    while start < end {
+        core::ptr::write_volatile(start, 0xffff_ffff);
+        start = start.add(1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __tc32_copy_words(
+    mut dst: *mut u32,
+    end: *mut u32,
+    mut src: *const u32,
+) {
+    while dst < end {
+        core::ptr::write_volatile(dst, core::ptr::read_volatile(src));
+        dst = dst.add(1);
+        src = src.add(1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __tc32_zero_words(mut dst: *mut u32, end: *mut u32) {
+    while dst < end {
+        core::ptr::write_volatile(dst, 0);
+        dst = dst.add(1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __tc32_analog_read_u8(reg: u8) -> u8 {
+    unsafe {
+        let ana = reg8(0x8000b8);
+        core::ptr::write_volatile(ana, reg);
+        core::ptr::write_volatile(ana.add(2), 0x40);
+        while (core::ptr::read_volatile(ana.add(2).cast_const()) & 1) != 0 {}
+        core::ptr::read_volatile(ana.add(1).cast_const())
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __tc32_system_on_for_flash() {
+    unsafe {
+        core::ptr::write_volatile(reg32(0x800060), 0xff08_0000);
+        core::ptr::write_volatile(reg8(0x800064), 0xff);
+        core::ptr::write_volatile(reg8(0x800065), 0xf7);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __tc32_init_icache(
+    mut tag_start: *mut u32,
+    tag_end: *mut u32,
+    ramcode_size_align_256: *mut u32,
+) {
+    while tag_start < tag_end {
+        core::ptr::write_volatile(tag_start, 0);
+        tag_start = tag_start.add(1);
+    }
+
+    let cache = reg8(0x80060c);
+    let lines = ((ramcode_size_align_256 as usize) >> 8) as u8;
+    core::ptr::write_volatile(cache, lines);
+    core::ptr::write_volatile(cache.add(1), lines.wrapping_add(1));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __tc32_flash_wakeup() {
+    unsafe {
+        let flash = reg8(0x80000c);
+        core::ptr::write_volatile(flash.add(1), 0);
+        core::ptr::write_volatile(flash, 0xab);
+        for _ in 0..=6u32 {
+            core::hint::spin_loop();
+        }
+        core::ptr::write_volatile(flash.add(1), 1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __tc32_efuse_delay() {
+    for _ in 0..110u32 {
+        core::hint::spin_loop();
+    }
+}
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".vectors.boot")]
+pub extern "C" fn __tc32_boot_init() -> ! {
+    unsafe {
+        __tc32_init_icache(
+            core::ptr::addr_of_mut!(_ictag_start_),
+            core::ptr::addr_of_mut!(_ictag_end_),
+            core::ptr::addr_of_mut!(_ramcode_size_align_256_),
+        );
+        __tc32_system_on_for_flash();
+        __tc32_flash_wakeup();
+        __tc32_efuse_delay();
+
+        let wake_flag = __tc32_analog_read_u8(0x7e);
+        if (wake_flag & 1) != 0 {
+            core::ptr::write_volatile(reg8(0x80063e), tl_multi_addr);
+        } else {
+            __tc32_fill_stack_pattern(
+                core::ptr::addr_of_mut!(_end_custom_bss_),
+                core::ptr::addr_of_mut!(_stack_end_),
+            );
+            __tc32_copy_words(
+                core::ptr::addr_of_mut!(_start_data_),
+                core::ptr::addr_of_mut!(_end_data_),
+                core::ptr::addr_of!(_dstored_),
+            );
+            __tc32_zero_words(
+                core::ptr::addr_of_mut!(_start_bss_),
+                core::ptr::addr_of_mut!(_end_bss_),
+            );
+            __tc32_copy_words(
+                core::ptr::addr_of_mut!(_start_custom_data_),
+                core::ptr::addr_of_mut!(_end_custom_data_),
+                core::ptr::addr_of!(_custom_stored_),
+            );
+            __tc32_zero_words(
+                core::ptr::addr_of_mut!(_start_custom_bss_),
+                core::ptr::addr_of_mut!(_end_custom_bss_),
+            );
+        }
+
+        let _ = main();
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __mulsi3(mut a: u32, mut b: u32) -> u32 {
+    let mut result = 0u32;
+    while b != 0 {
+        if (b & 1) != 0 {
+            result = result.wrapping_add(a);
+        }
+        a <<= 1;
+        b >>= 1;
+    }
+    result
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn adc_set_gpio_calib_vref(data: u16) {

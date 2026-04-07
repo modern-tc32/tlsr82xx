@@ -60,8 +60,6 @@ fn main() {
 
     let sources = [
         common_dir.join("support/link_cfg.S"),
-        common_dir.join("support/mulsi3.c"),
-        common_dir.join("support/tc32_boot_init.c"),
         common_dir.join("support/cstartup_8258.S"),
     ];
     let mut objects = Vec::new();
