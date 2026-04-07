@@ -11,6 +11,7 @@ members = [
   "examples/radio8258",
   "examples/rgb8258",
   "examples/spi8258",
+  "examples/stimerirq8258",
   "examples/uart8258",
 ]
 resolver = "2"

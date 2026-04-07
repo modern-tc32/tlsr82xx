@@ -61,6 +61,7 @@ fn main() {
     let sources = [
         common_dir.join("support/link_cfg.S"),
         common_dir.join("support/cstartup_8258.S"),
+        common_dir.join("support/irq_entry_8258_tc32.S"),
     ];
     let mut objects = Vec::new();
     for source in &sources {

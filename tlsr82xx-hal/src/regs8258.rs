@@ -38,10 +38,14 @@ pub(crate) const REG_PM_WAKEUP_FLAG: usize = 0x0080_007d;
 pub(crate) const REG_IRQ_MASK: usize = 0x0080_0640;
 pub(crate) const REG_IRQ_EN: usize = 0x0080_0643;
 pub(crate) const REG_IRQ_SRC: usize = 0x0080_0648;
+pub(crate) const REG_TMR_CTRL: usize = 0x0080_0620;
 pub(crate) const REG_TMR_STA: usize = 0x0080_0623;
+pub(crate) const REG_TMR0_CAPT: usize = 0x0080_0624;
 pub(crate) const REG_TMR0_TICK: usize = 0x0080_0630;
 pub(crate) const REG_TMR1_TICK: usize = 0x0080_0634;
 pub(crate) const REG_TMR2_TICK: usize = 0x0080_0638;
+pub(crate) const FLD_TMR0_EN: u32 = 1 << 0;
+pub(crate) const FLD_TMR0_MODE: u32 = 0b11 << 1;
 
 pub(crate) const REG_SYSTEM_TICK: usize = 0x0080_0740;
 pub(crate) const REG_SYSTEM_TICK_CTRL: usize = 0x0080_074f;

@@ -1,0 +1,18 @@
+[package]
+name = "tlsr82xx-stimerirq8258"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "tlsr82xx-stimerirq8258"
+path = "src/main.rs"
+
+[features]
+default = []
+
+[dependencies]
+embedded-hal = "1"
+tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }
+tlsr82xx-boards = { path = "../../tlsr82xx-boards", features = ["chip-8258"] }

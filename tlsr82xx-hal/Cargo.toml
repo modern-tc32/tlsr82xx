@@ -10,6 +10,7 @@ default = []
 chip-8258 = ["tlsr82xx-pac/chip-8258"]
 chip-8278 = ["tlsr82xx-pac/chip-8278"]
 chip-826x = ["tlsr82xx-pac/chip-826x"]
+custom-irq-handler = []
 
 [dependencies]
 embedded-hal = "1"
