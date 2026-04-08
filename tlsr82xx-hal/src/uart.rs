@@ -101,6 +101,7 @@ impl UartExt for pac::Uart {
 pub struct Uart {
     _inner: pac::Uart,
     tx_index: u8,
+    rx_index: u8,
 }
 
 impl Uart {
@@ -108,6 +109,7 @@ impl Uart {
         let uart = Self {
             _inner: inner,
             tx_index: 0,
+            rx_index: 0,
         };
         uart.enable_peripheral();
         uart
@@ -145,11 +147,9 @@ impl Uart {
         let (div, bwpc) = compute_baud_params(current_sysclk_hz(), config.baudrate);
 
         unsafe {
-            // ctrl0: keep DMA/IRQ disabled, update bit width per clock.
-            let ctrl0 = Self::reg8(0x06);
-            let mut ctrl0_value = core::ptr::read_volatile(ctrl0.cast_const()) & !0x0f;
-            ctrl0_value |= bwpc & 0x0f;
-            core::ptr::write_volatile(ctrl0, ctrl0_value);
+            // ctrl0 (0x96): force non-DMA/non-IRQ mode and set BWPC.
+            // [3:0]=BWPC, [4]=RX_DMA_EN, [5]=TX_DMA_EN, [6]=RX_IRQ_EN, [7]=TX_IRQ_EN
+            core::ptr::write_volatile(Self::reg8(0x06), bwpc & 0x0f);
 
             // clk_div: 15-bit divider plus enable bit.
             core::ptr::write_volatile(Self::reg16(0x04), div | 0x8000);
@@ -161,18 +161,20 @@ impl Uart {
             timeout1_value |= 0x01;
             core::ptr::write_volatile(timeout1, timeout1_value);
 
-            let ctrl1 = Self::reg8(0x07);
-            let mut ctrl1_value = core::ptr::read_volatile(ctrl1.cast_const()) & !0x3c;
+            // ctrl1/ctrl2: start from clean state to avoid stale CTS/RTS/loopback settings.
+            core::ptr::write_volatile(Self::reg16(0x08), 0);
+            let mut ctrl1_value = 0u8;
             ctrl1_value = match config.parity {
                 Parity::None => ctrl1_value & !(1 << 2),
                 Parity::Even => (ctrl1_value | (1 << 2)) & !(1 << 3),
                 Parity::Odd => ctrl1_value | (1 << 2) | (1 << 3),
             };
             ctrl1_value |= config.stop_bits as u8;
-            core::ptr::write_volatile(ctrl1, ctrl1_value);
+            core::ptr::write_volatile(Self::reg8(0x07), ctrl1_value);
         }
 
         self.tx_index = 0;
+        self.rx_index = 0;
     }
 
     pub fn is_tx_busy(&self) -> bool {
@@ -187,14 +189,17 @@ impl Uart {
 
     #[inline(always)]
     pub fn read_ready(&self) -> bool {
-        unsafe { (core::ptr::read_volatile(Self::reg8(0x0d).cast_const()) & 0x0f) != 0 }
+        // reg_uart_buf_cnt (0x9c): [3:0] RX count, [7:4] TX count
+        unsafe { (core::ptr::read_volatile(Self::reg8(0x0c).cast_const()) & 0x0f) != 0 }
     }
 
     pub fn read_byte(&mut self) -> u8 {
         while !self.read_ready() {
             core::hint::spin_loop();
         }
-        unsafe { core::ptr::read_volatile(Self::reg8(0x00).cast_const()) }
+        let byte = unsafe { core::ptr::read_volatile(Self::reg8(self.rx_index as usize).cast_const()) };
+        self.rx_index = (self.rx_index + 1) & 0x03;
+        byte
     }
 
     pub fn write_byte(&mut self, byte: u8) {
@@ -206,6 +211,23 @@ impl Uart {
             core::ptr::write_volatile(Self::reg8(self.tx_index as usize), byte);
         }
         self.tx_index = (self.tx_index + 1) & 0x03;
+    }
+
+    pub fn try_write_byte(&mut self, byte: u8, max_spins: u32) -> bool {
+        let mut spins = 0u32;
+        while self.tx_fifo_count() > 7 {
+            if spins >= max_spins {
+                return false;
+            }
+            spins = spins.wrapping_add(1);
+            core::hint::spin_loop();
+        }
+
+        unsafe {
+            core::ptr::write_volatile(Self::reg8(self.tx_index as usize), byte);
+        }
+        self.tx_index = (self.tx_index + 1) & 0x03;
+        true
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) {
@@ -270,10 +292,50 @@ impl IoRead for Uart {
 pub fn apply_pins(pins: Pins) {
     gpio::set_pull_resistor_raw(pins.tx as u16, analog::Pull::PullUp10K);
     gpio::set_pull_resistor_raw(pins.rx as u16, analog::Pull::PullUp10K);
-    gpio::set_function_raw(pins.tx as u16, PinFunction::Uart);
-    gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
+    if !set_uart_mux_vendor_8258(pins.tx as u16) {
+        gpio::set_function_raw(pins.tx as u16, PinFunction::Uart);
+    }
+    if !set_uart_mux_vendor_8258(pins.rx as u16) {
+        gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
+    }
+    // SDK gpio_set_func configures direction side effects internally.
+    // Our set_function_raw is mux-only, so set direction explicitly.
+    gpio::set_output_enabled_raw(pins.tx as u16, true);
+    gpio::set_output_enabled_raw(pins.rx as u16, false);
     gpio::set_input_enabled_raw(pins.tx as u16, true);
     gpio::set_input_enabled_raw(pins.rx as u16, true);
+}
+
+#[inline(always)]
+fn set_uart_mux_vendor_8258(raw_pin: u16) -> bool {
+    // Match SDK gpio_set_func() encodings for AS_UART on the pins used by TB03F loopback.
+    // PA0: reg_mux_func_a1 (0x5a8) mask=0xfc val=0x02
+    // PB1: reg_mux_func_b1 (0x5aa) mask=0xf3 val=0x04
+    // Also clear reg_gpio_func bit so pin is in peripheral mode.
+    unsafe {
+        match raw_pin {
+            0x0001 => {
+                let mux = 0x0080_05a8 as *mut u8;
+                let gpio_func = 0x0080_0586 as *mut u8;
+                let mux_v = core::ptr::read_volatile(mux.cast_const());
+                core::ptr::write_volatile(mux, (mux_v & 0xfc) | 0x02);
+                let f_v = core::ptr::read_volatile(gpio_func.cast_const());
+                core::ptr::write_volatile(gpio_func, f_v & !0x01);
+                true
+            }
+            0x0102 => {
+                let mux = 0x0080_05aa as *mut u8;
+                let gpio_func = 0x0080_058e as *mut u8;
+                let mux_v = core::ptr::read_volatile(mux.cast_const());
+                // PB1 occupies bits [3:2] in reg_mux_func_b1 (0x5aa)
+                core::ptr::write_volatile(mux, (mux_v & 0xf3) | 0x04);
+                let f_v = core::ptr::read_volatile(gpio_func.cast_const());
+                core::ptr::write_volatile(gpio_func, f_v & !0x02);
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 fn compute_baud_params(sysclk_hz: u32, baudrate: u32) -> (u16, u8) {
@@ -284,7 +346,9 @@ fn compute_baud_params(sysclk_hz: u32, baudrate: u32) -> (u16, u8) {
     let mut best_bwpc = 0u8;
     let mut best_error = u32::MAX;
 
-    for bwpc in 0u8..=15 {
+    // On TLSR8258, very small BWPC values are not reliable for UART timing.
+    // Vendor configurations use BWPC in the higher range (commonly 6..15).
+    for bwpc in 3u8..=15 {
         let denom = baudrate.saturating_mul(u32::from(bwpc) + 1);
         if denom == 0 {
             continue;
@@ -302,7 +366,7 @@ fn compute_baud_params(sysclk_hz: u32, baudrate: u32) -> (u16, u8) {
 
         let actual = sysclk_hz / ((div + 1) * (u32::from(bwpc) + 1));
         let error = actual.abs_diff(baudrate);
-        if error < best_error {
+        if error < best_error || (error == best_error && bwpc > best_bwpc) {
             best_error = error;
             best_div = div as u16;
             best_bwpc = bwpc;

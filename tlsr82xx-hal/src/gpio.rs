@@ -579,6 +579,33 @@ pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) {
 
 pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
     let (port, _, mask) = decode_raw_pin(raw_pin);
+    #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+    {
+        match port {
+            PORT_B => {
+                let mut reg = analog::read(0xbd);
+                if enabled {
+                    reg |= mask;
+                } else {
+                    reg &= !mask;
+                }
+                analog::write(0xbd, reg);
+                return;
+            }
+            PORT_C => {
+                let mut reg = analog::read(0xc0);
+                if enabled {
+                    reg |= mask;
+                } else {
+                    reg &= !mask;
+                }
+                analog::write(0xc0, reg);
+                return;
+            }
+            _ => {}
+        }
+    }
+
     modify_raw_port_reg(port, 0x01, mask, enabled);
 }
 

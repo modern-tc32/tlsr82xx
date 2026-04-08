@@ -13,6 +13,7 @@ members = [
   "examples/spi8258",
   "examples/stimerirq8258",
   "examples/uart8258",
+  "examples/uartloopback8258",
 ]
 resolver = "2"
 
