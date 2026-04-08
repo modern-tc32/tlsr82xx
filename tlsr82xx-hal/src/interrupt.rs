@@ -1,6 +1,11 @@
 use crate::mmio::{reg16, reg32, reg8};
 #[cfg(feature = "chip-8258")]
-use crate::regs8258::{REG_IRQ_EN, REG_IRQ_MASK, REG_IRQ_SRC, REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS};
+use crate::regs8258::{
+    FLD_IRQ_GPIO_EN, FLD_IRQ_GPIO_RISC0_EN, FLD_IRQ_GPIO_RISC1_EN, FLD_IRQ_SYSTEM_TIMER,
+    FLD_IRQ_TMR0_EN, FLD_IRQ_TMR1_EN, FLD_IRQ_TMR2_EN, FLD_TMR_STA_TMR0, FLD_TMR_STA_TMR1,
+    FLD_TMR_STA_TMR2, REG_IRQ_EN, REG_IRQ_MASK, REG_IRQ_SRC, REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS,
+    REG_TMR_STA,
+};
 
 pub const ALL_IRQS: u32 = 0xffff_ffff;
 
@@ -8,6 +13,31 @@ pub type IrqHandler = unsafe extern "C" fn(u32);
 
 static mut IRQ_HANDLERS: [Option<IrqHandler>; 32] = [None; 32];
 static mut GLOBAL_IRQ_HANDLER: Option<unsafe extern "C" fn()> = None;
+
+#[cfg(feature = "chip-8258")]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Pending8258 {
+    pub core: u32,
+    pub rf: u16,
+}
+
+#[cfg(feature = "chip-8258")]
+impl Pending8258 {
+    #[inline(always)]
+    pub const fn is_empty(self) -> bool {
+        self.core == 0 && self.rf == 0
+    }
+
+    #[inline(always)]
+    pub const fn has_irq(self, irq: Irq) -> bool {
+        (self.core & irq.mask()) != 0
+    }
+
+    #[inline(always)]
+    pub const fn has_rf(self, mask: u16) -> bool {
+        (self.rf & mask) != 0
+    }
+}
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +106,48 @@ pub fn disable_irq(irq: Irq) {
 #[inline(always)]
 pub fn clear_irq(irq: Irq) {
     clear_irq_source(irq.mask());
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
+pub fn acknowledge_irq(irq: Irq) {
+    unsafe {
+        match irq {
+            Irq::Timer0 => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_TMR0_EN);
+                core::ptr::write_volatile(reg8(REG_TMR_STA), FLD_TMR_STA_TMR0);
+            }
+            Irq::Timer1 => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_TMR1_EN);
+                core::ptr::write_volatile(reg8(REG_TMR_STA), FLD_TMR_STA_TMR1);
+            }
+            Irq::Timer2 => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_TMR2_EN);
+                core::ptr::write_volatile(reg8(REG_TMR_STA), FLD_TMR_STA_TMR2);
+            }
+            Irq::SystemTimer => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_SYSTEM_TIMER);
+            }
+            Irq::Gpio => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_GPIO_EN);
+            }
+            Irq::GpioRisc0 => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_GPIO_RISC0_EN);
+            }
+            Irq::GpioRisc1 => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), FLD_IRQ_GPIO_RISC1_EN);
+            }
+            _ => {
+                core::ptr::write_volatile(reg32(REG_IRQ_SRC), irq.mask());
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "chip-8258"))]
+#[inline(always)]
+pub fn acknowledge_irq(irq: Irq) {
+    clear_irq(irq);
 }
 
 #[inline(always)]
@@ -206,6 +278,11 @@ pub fn irq_source() -> u32 {
 }
 
 #[inline(always)]
+pub fn masked_irq_source() -> u32 {
+    irq_source() & mask()
+}
+
+#[inline(always)]
 pub fn clear_irq_source(mask: u32) {
     unsafe {
         core::ptr::write_volatile(reg32(REG_IRQ_SRC), mask);
@@ -239,8 +316,32 @@ pub fn rf_irq_source() -> u16 {
 }
 
 #[inline(always)]
+pub fn rf_mask() -> u16 {
+    unsafe { core::ptr::read_volatile(reg16(REG_RF_IRQ_MASK).cast_const()) }
+}
+
+#[inline(always)]
+pub fn masked_rf_irq_source() -> u16 {
+    rf_irq_source() & rf_mask()
+}
+
+#[inline(always)]
 pub fn rf_clear_irq_source(mask: u16) {
     unsafe {
         core::ptr::write_volatile(reg16(REG_RF_IRQ_STATUS), mask);
+    }
+}
+
+#[inline(always)]
+pub fn acknowledge_rf_irq(mask: u16) {
+    rf_clear_irq_source(mask);
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
+pub fn snapshot_pending_8258() -> Pending8258 {
+    Pending8258 {
+        core: masked_irq_source(),
+        rf: masked_rf_irq_source(),
     }
 }
