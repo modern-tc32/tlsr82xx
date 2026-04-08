@@ -30,6 +30,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tlsr82xx-ble-beacon8258"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
 name = "tlsr82xx-blink8258"
 version = "0.1.0"
 dependencies = [

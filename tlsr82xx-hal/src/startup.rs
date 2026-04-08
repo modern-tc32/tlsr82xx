@@ -73,6 +73,18 @@ const REG_PM_RET_BYTE: usize = REG_DFIFO0_SIZE;
 const REG_PM_RET_CLR: usize = REG_DMA_CHN_EN;
 const REG_PM_WAIT: usize = REG_SYSTEM_TICK_CTRL;
 const REG_RF_IRQ_DONE: usize = REG_RF_IRQ_STATUS;
+const TCMD_UNDER_WR: u8 = 0x40;
+const TCMD_MASK: u8 = 0x3f;
+const TCMD_WRITE: u8 = 0x03;
+const TCMD_WAIT: u8 = 0x07;
+const TCMD_WAREG: u8 = 0x08;
+
+#[repr(C)]
+pub struct TblCmdSet {
+    pub adr: u16,
+    pub dat: u8,
+    pub cmd: u8,
+}
 
 #[unsafe(no_mangle)]
 pub static mut sysTimerPerUs: u32 = 0;
@@ -302,6 +314,37 @@ pub extern "C" fn __tc32_efuse_delay() {
     for _ in 0..110u32 {
         core::hint::spin_loop();
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn LoadTblCmdSet(pt: *const TblCmdSet, size: i32) -> i32 {
+    if pt.is_null() || size <= 0 {
+        return 0;
+    }
+
+    let mut i = 0i32;
+    while i < size {
+        let entry = unsafe { core::ptr::read_volatile(pt.add(i as usize)) };
+        let cmd_raw = entry.cmd;
+        if (cmd_raw & TCMD_UNDER_WR) != 0 {
+            match cmd_raw & TCMD_MASK {
+                TCMD_WRITE => unsafe {
+                    core::ptr::write_volatile(reg8(0x0080_0000 | (entry.adr as usize)), entry.dat)
+                },
+                TCMD_WAREG => analog::write(entry.adr as u8, entry.dat),
+                TCMD_WAIT => {
+                    let delay_us = ((entry.adr as u32) << 8) | (entry.dat as u32);
+                    let t0 = timer::clock_time();
+                    while !timer::clock_time_exceed_us(t0, delay_us) {
+                        core::hint::spin_loop();
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    size
 }
 
 #[unsafe(no_mangle)]

@@ -8,6 +8,7 @@ members = [
   "examples/buttons8258",
   "examples/flash8258",
   "examples/i2c8258",
+  "examples/ble_beacon8258",
   "examples/radio8258",
   "examples/radio_selftest8258",
   "examples/rgb8258",
