@@ -10,6 +10,8 @@ compile_error!("enable only one tlsr82xx-hal chip feature at a time");
 compile_error!("enable only one tlsr82xx-hal chip feature at a time");
 #[cfg(not(any(feature = "chip-8258", feature = "chip-8278", feature = "chip-826x")))]
 compile_error!("enable one tlsr82xx-hal chip feature");
+#[cfg(all(feature = "irq-timer0-shim", not(feature = "chip-8258")))]
+compile_error!("irq-timer0-shim is only supported on chip-8258");
 
 pub use tlsr82xx_pac as pac;
 

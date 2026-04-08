@@ -6,7 +6,6 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=TC32_LLVM_BIN");
-    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_TIMER0_IRQ_SHIM");
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"));
     let examples_dir = manifest_dir.parent().expect("example crate lives under examples/");
@@ -62,7 +61,6 @@ fn main() {
     let sources = [
         common_dir.join("support/link_cfg.S"),
         common_dir.join("support/cstartup_8258.S"),
-        common_dir.join("support/irq_entry_8258_tc32.S"),
     ];
     let mut objects = Vec::new();
     for source in &sources {
@@ -81,20 +79,6 @@ fn main() {
         }
         command.arg("-o").arg(&object).arg(source);
         run(&mut command, source);
-        objects.push(object);
-    }
-
-    if env::var_os("CARGO_FEATURE_TIMER0_IRQ_SHIM").is_some() {
-        let source = common_dir.join("support/irq_timer0_shim_8258_tc32.S");
-        println!("cargo:rerun-if-changed={}", source.display());
-        let object = object_dir.join(object_name(&source));
-        let mut command = Command::new(&clang);
-        command.arg("--target=tc32").arg("-c").args(asm_flags);
-        for dir in &include_dirs {
-            command.arg("-I").arg(dir);
-        }
-        command.arg("-o").arg(&object).arg(&source);
-        run(&mut command, &source);
         objects.push(object);
     }
 

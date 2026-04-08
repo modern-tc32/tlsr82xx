@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = ["timer0-irq-shim"]
-timer0-irq-shim = ["tlsr82xx-hal/custom-irq-handler"]
+timer0-irq-shim = ["tlsr82xx-hal/irq-timer0-shim"]
 
 [dependencies]
 embedded-hal = "1"
