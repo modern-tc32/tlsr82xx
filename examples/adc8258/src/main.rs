@@ -11,6 +11,11 @@ use tlsr82xx_hal::timer;
 
 mod platform;
 
+const ADC_FRAME_PERIOD_US: u32 = 400_000;
+const ADC_FRAME_COUNT: u8 = 3;
+const LED_Y_MASK: u32 = 1 << 0;
+const LED_W_MASK: u32 = 1 << 1;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     let _ = platform::init();
@@ -22,9 +27,9 @@ pub extern "C" fn main() -> i32 {
     let mut frame = 0u8;
 
     loop {
-        if timer::clock_time_exceed_us(tick, 400_000) {
+        if timer::clock_time_exceed_us(tick, ADC_FRAME_PERIOD_US) {
             tick = timer::clock_time();
-            frame = (frame + 1) % 3;
+            frame = (frame + 1) % ADC_FRAME_COUNT;
 
             let sample = adc.sample_current_config_with_fluctuation();
             let calib = adc.gpio_calibration_vref_mv() as u32;
@@ -34,8 +39,8 @@ pub extern "C" fn main() -> i32 {
                 _ => calib,
             };
 
-            drive_pin(&mut board.led_y, (bits & 0x01) != 0);
-            drive_pin(&mut board.led_w, (bits & 0x02) != 0);
+            drive_pin(&mut board.led_y, (bits & LED_Y_MASK) != 0);
+            drive_pin(&mut board.led_w, (bits & LED_W_MASK) != 0);
         }
     }
 }

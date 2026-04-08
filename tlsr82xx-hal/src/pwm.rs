@@ -12,6 +12,12 @@ const PWM0_MODE_REG: usize = 0x0080_0783;
 const PWM_INVERT_REG: usize = 0x0080_0784;
 const PWM_POL_REG: usize = 0x0080_0786;
 const PWM_CYCLE_BASE: usize = 0x0080_0794;
+const RESET_CLK_EN0_OFFSET: usize = 0x03;
+const FLD_CLK0_PWM_EN: u8 = 1 << 4;
+const FLD_RST0_PWM: u8 = 1 << 4;
+const FLD_PWM0_ENABLE: u8 = 1 << 0;
+const PWM_CYCLE_HIGH_SHIFT: u32 = 16;
+pub const PWM_DUTY_MAX_8BIT: u16 = 255;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -83,14 +89,14 @@ impl Pwm {
     #[inline(always)]
     fn enable_peripheral(&self) {
         unsafe {
-            let clk_en0 = (RESET_BASE + 0x03) as *mut u8;
+            let clk_en0 = (RESET_BASE + RESET_CLK_EN0_OFFSET) as *mut u8;
             let rst0 = RESET_BASE as *mut u8;
 
             core::ptr::write_volatile(
                 clk_en0,
-                core::ptr::read_volatile(clk_en0.cast_const()) | (1 << 4),
+                core::ptr::read_volatile(clk_en0.cast_const()) | FLD_CLK0_PWM_EN,
             );
-            core::ptr::write_volatile(rst0, 1 << 4);
+            core::ptr::write_volatile(rst0, FLD_RST0_PWM);
             core::ptr::write_volatile(rst0, 0);
         }
     }
@@ -117,7 +123,7 @@ impl Pwm {
         unsafe {
             core::ptr::write_volatile(
                 Self::cycle_reg(channel),
-                u32::from(duty_ticks) | (u32::from(cycle_ticks) << 16),
+                encode_cycle_register(duty_ticks, cycle_ticks),
             );
         }
     }
@@ -127,7 +133,7 @@ impl Pwm {
             Channel::Pwm0 => self
                 ._inner
                 .pwm0_enable()
-                .modify(|r, w| unsafe { w.bits(r.bits() | 0x01) }),
+                .modify(|r, w| unsafe { w.bits(r.bits() | FLD_PWM0_ENABLE) }),
             _ => self
                 ._inner
                 .pwm_enable()
@@ -140,7 +146,7 @@ impl Pwm {
             Channel::Pwm0 => self
                 ._inner
                 .pwm0_enable()
-                .modify(|r, w| unsafe { w.bits(r.bits() & !0x01) }),
+                .modify(|r, w| unsafe { w.bits(r.bits() & !FLD_PWM0_ENABLE) }),
             _ => self
                 ._inner
                 .pwm_enable()
@@ -161,7 +167,7 @@ impl Pwm {
     }
 
     pub fn set_duty_8bit(&mut self, channel: Channel, level: u8) {
-        self.set_duty_fraction(channel, u16::from(level), 255);
+        self.set_duty_fraction(channel, u16::from(level), PWM_DUTY_MAX_8BIT);
     }
 
     pub fn set_inverted(&mut self, channel: Channel, inverted: bool) {
@@ -229,7 +235,7 @@ impl PwmChannel {
         unsafe {
             core::ptr::write_volatile(
                 self.cycle_reg(),
-                u32::from(duty_ticks) | (u32::from(cycle_ticks) << 16),
+                encode_cycle_register(duty_ticks, cycle_ticks),
             );
         }
     }
@@ -239,7 +245,7 @@ impl PwmChannel {
             match self.channel {
                 Channel::Pwm0 => {
                     let reg = PWM0_ENABLE_REG as *mut u8;
-                    let bits = core::ptr::read_volatile(reg.cast_const()) | 0x01;
+                    let bits = core::ptr::read_volatile(reg.cast_const()) | FLD_PWM0_ENABLE;
                     core::ptr::write_volatile(reg, bits);
                 }
                 _ => {
@@ -256,7 +262,7 @@ impl PwmChannel {
             match self.channel {
                 Channel::Pwm0 => {
                     let reg = PWM0_ENABLE_REG as *mut u8;
-                    let bits = core::ptr::read_volatile(reg.cast_const()) & !0x01;
+                    let bits = core::ptr::read_volatile(reg.cast_const()) & !FLD_PWM0_ENABLE;
                     core::ptr::write_volatile(reg, bits);
                 }
                 _ => {
@@ -310,8 +316,13 @@ impl PwmChannel {
     }
 
     pub fn set_duty_8bit(&mut self, level: u8) {
-        self.set_duty_fraction(u16::from(level), 255);
+        self.set_duty_fraction(u16::from(level), PWM_DUTY_MAX_8BIT);
     }
+}
+
+#[inline(always)]
+fn encode_cycle_register(duty_ticks: u16, cycle_ticks: u16) -> u32 {
+    u32::from(duty_ticks) | (u32::from(cycle_ticks) << PWM_CYCLE_HIGH_SHIFT)
 }
 
 impl ErrorType for PwmChannel {

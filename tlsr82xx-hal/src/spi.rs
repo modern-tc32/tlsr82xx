@@ -11,6 +11,12 @@ use crate::regs8258::{
 };
 
 const SPI_TIMEOUT_CYCLES: usize = 100_000;
+const SPI_CLOCK_DIVIDER_MAX: u8 = 0x7f;
+const SPI_MODE0_INV_CLK: u8 = 0;
+const SPI_MODE1_INV_CLK: u8 = 1;
+const SPI_MODE2_INV_CLK: u8 = 2;
+const SPI_MODE3_INV_CLK: u8 = 3;
+const SPI_TX_DUMMY_BYTE: u8 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -212,7 +218,7 @@ impl SpiBus<u8> for Spi {
         self.write_setup();
         let total = read.len().max(write.len());
         for index in 0..total {
-            let tx = write.get(index).copied().unwrap_or(0);
+            let tx = write.get(index).copied().unwrap_or(SPI_TX_DUMMY_BYTE);
             let rx = self.write_byte(tx)?;
             if let Some(slot) = read.get_mut(index) {
                 *slot = rx;
@@ -237,15 +243,15 @@ impl SpiBus<u8> for Spi {
 fn compute_divider(frequency_hz: u32) -> u8 {
     let sys_hz = u32::from(clock::current_mhz()) * 1_000_000;
     let divider = (sys_hz / (frequency_hz.max(1) * 2)).saturating_sub(1);
-    divider.min(0x7f) as u8
+    divider.min(u32::from(SPI_CLOCK_DIVIDER_MAX)) as u8
 }
 
 fn encode_mode(mode: Mode) -> u8 {
     match (mode.polarity, mode.phase) {
-        (Polarity::IdleLow, Phase::CaptureOnFirstTransition) => 0,
-        (Polarity::IdleHigh, Phase::CaptureOnFirstTransition) => 1,
-        (Polarity::IdleLow, Phase::CaptureOnSecondTransition) => 2,
-        (Polarity::IdleHigh, Phase::CaptureOnSecondTransition) => 3,
+        (Polarity::IdleLow, Phase::CaptureOnFirstTransition) => SPI_MODE0_INV_CLK,
+        (Polarity::IdleHigh, Phase::CaptureOnFirstTransition) => SPI_MODE1_INV_CLK,
+        (Polarity::IdleLow, Phase::CaptureOnSecondTransition) => SPI_MODE2_INV_CLK,
+        (Polarity::IdleHigh, Phase::CaptureOnSecondTransition) => SPI_MODE3_INV_CLK,
     }
 }
 
