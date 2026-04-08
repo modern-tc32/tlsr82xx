@@ -294,7 +294,7 @@ impl Radio {
         let addr = buffer as usize;
         unsafe {
             core::ptr::write_volatile(reg16(REG_DMA2_ADDR), addr as u16);
-            core::ptr::write_volatile(reg8(REG_DMA2_ADDR_HI), (addr >> 16) as u8);
+            core::ptr::write_volatile(reg8(REG_DMA2_ADDR_HI), ((addr >> 16) as u8) & 0x0f);
         }
     }
 
@@ -315,7 +315,7 @@ impl Radio {
         let addr = buffer as usize;
         unsafe {
             core::ptr::write_volatile(reg16(REG_DMA3_ADDR), addr as u16);
-            core::ptr::write_volatile(reg8(REG_DMA3_ADDR_HI), (addr >> 16) as u8);
+            core::ptr::write_volatile(reg8(REG_DMA3_ADDR_HI), ((addr >> 16) as u8) & 0x0f);
         }
     }
 

@@ -9,6 +9,7 @@ members = [
   "examples/flash8258",
   "examples/i2c8258",
   "examples/radio8258",
+  "examples/radio_selftest8258",
   "examples/rgb8258",
   "examples/spi8258",
   "examples/stimerirq8258",
