@@ -385,7 +385,7 @@ pub fn apply_pins(pins: Pins) {
     if !set_uart_mux_vendor_8258(pins.rx as u16) {
         let _ = gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
     }
-    // SDK gpio_set_func configures direction side effects internally.
+    // Vendor GPIO mux path configures direction side effects internally.
     // Our set_function_raw is mux-only, so set direction explicitly.
     gpio::set_output_enabled_raw(pins.tx as u16, true);
     gpio::set_output_enabled_raw(pins.rx as u16, false);
@@ -395,7 +395,7 @@ pub fn apply_pins(pins: Pins) {
 
 #[inline(always)]
 fn set_uart_mux_vendor_8258(raw_pin: u16) -> bool {
-    // Match SDK gpio_set_func() encodings for AS_UART on the pins used by TB03F loopback.
+    // Match vendor GPIO mux encodings for AS_UART on the pins used by TB03F loopback.
     // PA0: reg_mux_func_a1 (0x5a8) mask=0xfc val=0x02
     // PB1: reg_mux_func_b1 (0x5aa) mask=0xf3 val=0x04
     // Also clear reg_gpio_func bit so pin is in peripheral mode.
