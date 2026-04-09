@@ -1,7 +1,8 @@
 use embedded_hal::digital::InputPin;
 use tlsr82xx_hal::analog::Pull;
 use tlsr82xx_hal::gpio::{
-    DriveStrength, GpioExt, Input, Level, Output, PinFunction, PA7, PB4, PB5, Pins,
+    self, DriveStrength, GpioExt, Input, Level, Output, PinFunction, PinmuxError, Pins, PA7, PB4,
+    PB5,
 };
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::uart::{self, Pins as UartPins};
@@ -39,11 +40,19 @@ impl Board {
 }
 
 pub fn configure_rgb_pins(pins: &mut Pins) {
-    pins.pc2.set_function(PinFunction::Pwm0);
-    pins.pc3.set_function(PinFunction::Pwm1);
-    pins.pc4.set_function(PinFunction::Pwm2);
+    let _ = pins.pc2.set_function(PinFunction::Pwm0);
+    let _ = pins.pc3.set_function(PinFunction::Pwm1);
+    let _ = pins.pc4.set_function(PinFunction::Pwm2);
 }
 
 pub fn configure_uart_pins() {
     uart::apply_pins(UartPins::PB1_PA0);
+}
+
+pub fn configure_radio_fe_pins() -> Result<(), PinmuxError> {
+    const PIN_PB2_RAW: u16 = 0x0104;
+    const PIN_PB3_RAW: u16 = 0x0108;
+    gpio::set_function_for_raw_pin(PIN_PB2_RAW, PinFunction::RxCyc2Lna)?;
+    gpio::set_function_for_raw_pin(PIN_PB3_RAW, PinFunction::TxCyc2Pa)?;
+    Ok(())
 }

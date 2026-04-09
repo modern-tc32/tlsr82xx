@@ -241,7 +241,10 @@ fn adc_set_state_length(r_max_mc: u16, r_max_c: u16, r_max_s: u8) {
 
 #[inline(always)]
 fn adc_set_channel_enable_and_max_state_count(channel_bits: u8, count: u8) {
-    analog::write(AREG_ADC_CHANNEL_ENABLE, channel_bits | ((count & 0x07) << 4));
+    analog::write(
+        AREG_ADC_CHANNEL_ENABLE,
+        channel_bits | ((count & 0x07) << 4),
+    );
 }
 
 #[inline(always)]
@@ -250,7 +253,10 @@ fn adc_config_misc_channel_buffer(buffer: *mut u16, size_bytes: usize) {
     unsafe {
         core::ptr::write_volatile(reg16(REG_DFIFO2_ADDR), addr as u16);
         core::ptr::write_volatile(reg8(REG_DFIFO2_ADD_HI), (addr >> 16) as u8);
-        core::ptr::write_volatile(reg8(REG_DFIFO2_SIZE), ((size_bytes >> 4) as u8).wrapping_sub(1));
+        core::ptr::write_volatile(
+            reg8(REG_DFIFO2_SIZE),
+            ((size_bytes >> 4) as u8).wrapping_sub(1),
+        );
     }
 }
 
@@ -336,7 +342,7 @@ fn adc_vbat_init(pin: AdcGpioPin) {
 #[inline(always)]
 fn adc_configure_base_pin(pin: AdcGpioPin) {
     let raw = pin.raw_pin();
-    gpio::set_function_raw(raw, PinFunction::Gpio);
+    let _ = gpio::set_function_raw(raw, PinFunction::Gpio);
     gpio::set_input_enabled_raw(raw, false);
     gpio::set_output_enabled_raw(raw, false);
     gpio::write_data_raw(raw, false);
@@ -346,7 +352,7 @@ fn adc_configure_base_pin(pin: AdcGpioPin) {
 #[inline(always)]
 fn adc_configure_vbat_pin(pin: AdcGpioPin) {
     let raw = pin.raw_pin();
-    gpio::set_function_raw(raw, PinFunction::Gpio);
+    let _ = gpio::set_function_raw(raw, PinFunction::Gpio);
     gpio::set_input_enabled_raw(raw, false);
     gpio::set_output_enabled_raw(raw, true);
     gpio::write_data_raw(raw, true);
@@ -416,7 +422,10 @@ fn adc_set_vbat_divider(divider: AdcVbatDivider) {
 
 #[inline(always)]
 fn adc_set_misc_input_differential(positive: u8, negative: u8) {
-    analog::write(AREG_ADC_MISC_INPUT, (negative & 0x0f) | ((positive & 0x0f) << 4));
+    analog::write(
+        AREG_ADC_MISC_INPUT,
+        (negative & 0x0f) | ((positive & 0x0f) << 4),
+    );
     let mut value = analog::read(AREG_ADC_RESOLUTION_MISC);
     value |= 1 << 6;
     analog::write(AREG_ADC_RESOLUTION_MISC, value);
@@ -494,7 +503,10 @@ fn sample_current_config_with_fluctuation() -> AdcSample {
     let mut adc_sample = [0u16; ADC_SAMPLE_NUM];
 
     adc_reset_module();
-    adc_config_misc_channel_buffer(adc_data_buf.0.as_mut_ptr().cast::<u16>(), ADC_SAMPLE_NUM << 2);
+    adc_config_misc_channel_buffer(
+        adc_data_buf.0.as_mut_ptr().cast::<u16>(),
+        ADC_SAMPLE_NUM << 2,
+    );
     dfifo_enable_dfifo2();
 
     let mut t0 = crate::timer::clock_time();
@@ -520,9 +532,11 @@ fn sample_current_config_with_fluctuation() -> AdcSample {
 
     dfifo_disable_dfifo2();
 
-    let adc_average =
-        (u32::from(adc_sample[2]) + u32::from(adc_sample[3]) + u32::from(adc_sample[4]) + u32::from(adc_sample[5]))
-            / 4;
+    let adc_average = (u32::from(adc_sample[2])
+        + u32::from(adc_sample[3])
+        + u32::from(adc_sample[4])
+        + u32::from(adc_sample[5]))
+        / 4;
 
     if adc_average == 0 {
         return AdcSample {
@@ -534,9 +548,10 @@ fn sample_current_config_with_fluctuation() -> AdcSample {
     let adc_vref = u32::from(gpio_calibration_vref_mv());
     let adc_pre_scale = 8u32;
     let millivolts = ((adc_average * adc_pre_scale * adc_vref) >> 13) as u32;
-    let fluctuation_mv =
-        (((u32::from(adc_sample[ADC_SAMPLE_NUM - 1]) - u32::from(adc_sample[0])) * adc_pre_scale * adc_vref) >> 13)
-            as u32;
+    let fluctuation_mv = (((u32::from(adc_sample[ADC_SAMPLE_NUM - 1]) - u32::from(adc_sample[0]))
+        * adc_pre_scale
+        * adc_vref)
+        >> 13) as u32;
 
     AdcSample {
         millivolts,

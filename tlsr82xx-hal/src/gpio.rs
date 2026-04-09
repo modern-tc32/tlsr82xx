@@ -37,15 +37,37 @@ pub enum DriveStrength {
 #[repr(u8)]
 pub enum PinFunction {
     Gpio = 0,
+    Mspi = 1,
+    Swire = 2,
     Uart = 3,
+    I2c = 4,
+    Spi = 5,
+    I2s = 6,
+    Dmic = 8,
+    Sdm = 9,
+    Usb = 10,
+    Cmp = 12,
+    Ats = 13,
     Pwm0 = 20,
     Pwm1 = 21,
     Pwm2 = 22,
     Pwm3 = 23,
     Pwm4 = 24,
     Pwm5 = 25,
+    Pwm0N = 26,
+    Pwm1N = 27,
+    Pwm2N = 28,
+    Pwm3N = 29,
+    Pwm4N = 30,
+    Pwm5N = 31,
     TxCyc2Pa = 32,
     RxCyc2Lna = 33,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PinmuxError {
+    InvalidRawPin(u16),
+    UnsupportedPair { raw_pin: u16, function: PinFunction },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -213,8 +235,8 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
         ((PORT as u16) << 8) | Self::mask() as u16
     }
 
-    pub fn set_function(&mut self, function: PinFunction) {
-        set_function_raw(Self::raw_pin(), function);
+    pub fn set_function(&mut self, function: PinFunction) -> Result<(), PinmuxError> {
+        set_function_raw(Self::raw_pin(), function)
     }
 
     #[inline(always)]
@@ -519,6 +541,21 @@ fn decode_raw_pin(raw_pin: u16) -> (u8, u8, u8) {
 }
 
 #[inline(always)]
+fn decode_raw_pin_checked(raw_pin: u16) -> Option<(u8, u8, u8)> {
+    let (port, bit, mask) = decode_raw_pin(raw_pin);
+    if !mask.is_power_of_two() {
+        return None;
+    }
+    if port > PORT_E {
+        return None;
+    }
+    if port == PORT_E && bit > 3 {
+        return None;
+    }
+    Some((port, bit, mask))
+}
+
+#[inline(always)]
 fn reg_raw(port: u8, offset: usize) -> *mut u8 {
     (GPIO_BASE + ((port as usize) << 3) + offset) as *mut u8
 }
@@ -549,40 +586,144 @@ fn write_mux_selector(port: u8, bit: u8, selector: u8) {
     }
 }
 
+enum PinmuxMode {
+    Selector(u8),
+    FixedNoMux,
+}
+
 #[inline(always)]
-fn selector_for_function(raw_pin: u16, function: PinFunction) -> Option<u8> {
+fn pinmux_mode_for(raw_pin: u16, function: PinFunction) -> Option<PinmuxMode> {
     match (raw_pin, function) {
         (_, PinFunction::Gpio) => None,
-        (0x0001, PinFunction::Uart) => Some(0b10), // PA0
-        (0x0004, PinFunction::Uart) => Some(0b01), // PA2
-        (0x0101, PinFunction::Uart) => Some(0b01), // PB0
-        (0x0102, PinFunction::Uart) => Some(0b01), // PB1
-        (0x0204, PinFunction::Uart) => Some(0b01), // PC2
-        (0x0204, PinFunction::Pwm0) => Some(0b00), // PC2
-        (0x0208, PinFunction::Uart) => Some(0b01), // PC3
-        (0x0208, PinFunction::Pwm1) => Some(0b00), // PC3
-        (0x0210, PinFunction::Pwm2) => Some(0b00), // PC4
-        (0x0104, PinFunction::RxCyc2Lna) => Some(0b10), // PB2
-        (0x0108, PinFunction::TxCyc2Pa) => Some(0b10),  // PB3
+        (0x0001, PinFunction::Dmic) => Some(PinmuxMode::Selector(0b00)), // PA0
+        (0x0001, PinFunction::Pwm0N) => Some(PinmuxMode::Selector(0b01)), // PA0
+        (0x0001, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PA0
+        (0x0002, PinFunction::Dmic) => Some(PinmuxMode::Selector(0b00)), // PA1
+        (0x0002, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PA1
+        (0x0002, PinFunction::I2s) => Some(PinmuxMode::Selector(0b10)),  // PA1
+        (0x0004, PinFunction::Spi) => Some(PinmuxMode::Selector(0b00)),  // PA2
+        (0x0004, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PA2
+        (0x0004, PinFunction::Pwm0) => Some(PinmuxMode::Selector(0b10)), // PA2
+        (0x0008, PinFunction::Spi) => Some(PinmuxMode::Selector(0b00)),  // PA3
+        (0x0008, PinFunction::I2c) => Some(PinmuxMode::Selector(0b00)),  // PA3
+        (0x0008, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PA3
+        (0x0008, PinFunction::Pwm1) => Some(PinmuxMode::Selector(0b10)), // PA3
+        (0x0010, PinFunction::Spi) => Some(PinmuxMode::Selector(0b00)),  // PA4
+        (0x0010, PinFunction::I2c) => Some(PinmuxMode::Selector(0b00)),  // PA4
+        (0x0010, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PA4
+        (0x0010, PinFunction::Pwm2) => Some(PinmuxMode::Selector(0b10)), // PA4
+        (0x0020, PinFunction::Usb) => Some(PinmuxMode::FixedNoMux),      // PA5
+        (0x0040, PinFunction::Usb) => Some(PinmuxMode::FixedNoMux),      // PA6
+        (0x0080, PinFunction::Swire) => Some(PinmuxMode::Selector(0b00)), // PA7
+        (0x0080, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PA7
+        (0x0101, PinFunction::Pwm3) => Some(PinmuxMode::Selector(0b00)), // PB0
+        (0x0101, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PB0
+        (0x0101, PinFunction::Ats) => Some(PinmuxMode::Selector(0b10)),  // PB0
+        (0x0102, PinFunction::Pwm4) => Some(PinmuxMode::Selector(0b00)), // PB1
+        (0x0102, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PB1
+        (0x0102, PinFunction::Ats) => Some(PinmuxMode::Selector(0b10)),  // PB1
+        (0x0104, PinFunction::Pwm5) => Some(PinmuxMode::Selector(0b00)), // PB2
+        (0x0104, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PB2
+        (0x0104, PinFunction::RxCyc2Lna) => Some(PinmuxMode::Selector(0b10)), // PB2
+        (0x0108, PinFunction::Pwm0N) => Some(PinmuxMode::Selector(0b00)), // PB3
+        (0x0108, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PB3
+        (0x0108, PinFunction::TxCyc2Pa) => Some(PinmuxMode::Selector(0b10)), // PB3
+        (0x0110, PinFunction::Sdm) => Some(PinmuxMode::Selector(0b00)),  // PB4
+        (0x0110, PinFunction::Pwm4) => Some(PinmuxMode::Selector(0b01)), // PB4
+        (0x0110, PinFunction::Cmp) => Some(PinmuxMode::Selector(0b10)),  // PB4
+        (0x0120, PinFunction::Sdm) => Some(PinmuxMode::Selector(0b00)),  // PB5
+        (0x0120, PinFunction::Pwm5) => Some(PinmuxMode::Selector(0b01)), // PB5
+        (0x0120, PinFunction::Cmp) => Some(PinmuxMode::Selector(0b10)),  // PB5
+        (0x0140, PinFunction::Sdm) => Some(PinmuxMode::Selector(0b00)),  // PB6
+        (0x0140, PinFunction::Spi) => Some(PinmuxMode::Selector(0b01)),  // PB6
+        (0x0140, PinFunction::I2c) => Some(PinmuxMode::Selector(0b01)),  // PB6
+        (0x0140, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PB6
+        (0x0180, PinFunction::Sdm) => Some(PinmuxMode::Selector(0b00)),  // PB7
+        (0x0180, PinFunction::Spi) => Some(PinmuxMode::Selector(0b01)),  // PB7
+        (0x0180, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PB7
+        (0x0201, PinFunction::I2c) => Some(PinmuxMode::Selector(0b00)),  // PC0
+        (0x0201, PinFunction::Pwm4N) => Some(PinmuxMode::Selector(0b01)), // PC0
+        (0x0201, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PC0
+        (0x0202, PinFunction::I2c) => Some(PinmuxMode::Selector(0b00)),  // PC1
+        (0x0202, PinFunction::Pwm1N) => Some(PinmuxMode::Selector(0b01)), // PC1
+        (0x0202, PinFunction::Pwm0) => Some(PinmuxMode::Selector(0b10)), // PC1
+        (0x0204, PinFunction::Pwm0) => Some(PinmuxMode::Selector(0b00)), // PC2
+        (0x0204, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PC2
+        (0x0204, PinFunction::I2c) => Some(PinmuxMode::Selector(0b10)),  // PC2
+        (0x0208, PinFunction::Pwm1) => Some(PinmuxMode::Selector(0b00)), // PC3
+        (0x0208, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PC3
+        (0x0208, PinFunction::I2c) => Some(PinmuxMode::Selector(0b10)),  // PC3
+        (0x0210, PinFunction::Pwm2) => Some(PinmuxMode::Selector(0b00)), // PC4
+        (0x0210, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PC4
+        (0x0210, PinFunction::Pwm0N) => Some(PinmuxMode::Selector(0b10)), // PC4
+        (0x0220, PinFunction::Pwm3N) => Some(PinmuxMode::Selector(0b00)), // PC5
+        (0x0220, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PC5
+        (0x0220, PinFunction::Ats) => Some(PinmuxMode::Selector(0b10)),  // PC5
+        (0x0240, PinFunction::RxCyc2Lna) => Some(PinmuxMode::Selector(0b00)), // PC6
+        (0x0240, PinFunction::Ats) => Some(PinmuxMode::Selector(0b01)),  // PC6
+        (0x0240, PinFunction::Pwm4N) => Some(PinmuxMode::Selector(0b10)), // PC6
+        (0x0280, PinFunction::TxCyc2Pa) => Some(PinmuxMode::Selector(0b00)), // PC7
+        (0x0280, PinFunction::Ats) => Some(PinmuxMode::Selector(0b01)),  // PC7
+        (0x0280, PinFunction::Pwm5N) => Some(PinmuxMode::Selector(0b10)), // PC7
+        (0x0301, PinFunction::RxCyc2Lna) => Some(PinmuxMode::Selector(0b00)), // PD0
+        (0x0301, PinFunction::Cmp) => Some(PinmuxMode::Selector(0b01)),  // PD0
+        (0x0301, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PD0
+        (0x0302, PinFunction::TxCyc2Pa) => Some(PinmuxMode::Selector(0b00)), // PD1
+        (0x0302, PinFunction::Cmp) => Some(PinmuxMode::Selector(0b01)),  // PD1
+        (0x0302, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PD1
+        (0x0304, PinFunction::Spi) => Some(PinmuxMode::Selector(0b00)),  // PD2
+        (0x0304, PinFunction::I2s) => Some(PinmuxMode::Selector(0b01)),  // PD2
+        (0x0304, PinFunction::Pwm3) => Some(PinmuxMode::Selector(0b10)), // PD2
+        (0x0308, PinFunction::Pwm1N) => Some(PinmuxMode::Selector(0b00)), // PD3
+        (0x0308, PinFunction::I2s) => Some(PinmuxMode::Selector(0b01)),  // PD3
+        (0x0308, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PD3
+        (0x0310, PinFunction::Swire) => Some(PinmuxMode::Selector(0b00)), // PD4
+        (0x0310, PinFunction::I2s) => Some(PinmuxMode::Selector(0b01)),  // PD4
+        (0x0310, PinFunction::Pwm2N) => Some(PinmuxMode::Selector(0b10)), // PD4
+        (0x0320, PinFunction::Pwm0) => Some(PinmuxMode::Selector(0b00)), // PD5
+        (0x0320, PinFunction::Cmp) => Some(PinmuxMode::Selector(0b01)),  // PD5
+        (0x0320, PinFunction::Pwm0N) => Some(PinmuxMode::Selector(0b10)), // PD5
+        (0x0340, PinFunction::Spi) => Some(PinmuxMode::Selector(0b00)),  // PD6
+        (0x0340, PinFunction::Uart) => Some(PinmuxMode::Selector(0b01)), // PD6
+        (0x0340, PinFunction::Ats) => Some(PinmuxMode::Selector(0b10)),  // PD6
+        (0x0380, PinFunction::Spi) => Some(PinmuxMode::Selector(0b00)),  // PD7
+        (0x0380, PinFunction::I2c) => Some(PinmuxMode::Selector(0b00)),  // PD7
+        (0x0380, PinFunction::I2s) => Some(PinmuxMode::Selector(0b01)),  // PD7
+        (0x0380, PinFunction::Uart) => Some(PinmuxMode::Selector(0b10)), // PD7
+        (0x0401, PinFunction::Mspi) => Some(PinmuxMode::FixedNoMux),     // PE0
+        (0x0402, PinFunction::Mspi) => Some(PinmuxMode::FixedNoMux),     // PE1
+        (0x0404, PinFunction::Mspi) => Some(PinmuxMode::FixedNoMux),     // PE2
+        (0x0408, PinFunction::Mspi) => Some(PinmuxMode::FixedNoMux),     // PE3
         _ => None,
     }
 }
 
-pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) {
-    let (port, bit, mask) = decode_raw_pin(raw_pin);
+pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) -> Result<(), PinmuxError> {
+    let Some((port, bit, mask)) = decode_raw_pin_checked(raw_pin) else {
+        return Err(PinmuxError::InvalidRawPin(raw_pin));
+    };
     if matches!(function, PinFunction::Gpio) {
         modify_raw_port_reg(port, 0x06, mask, true);
-        return;
+        return Ok(());
     }
 
-    let selector = selector_for_function(raw_pin, function)
-        .unwrap_or_else(|| panic!("unsupported pin/function pair: 0x{raw_pin:04x} {function:?}"));
-    write_mux_selector(port, bit, selector);
+    let Some(mode) = pinmux_mode_for(raw_pin, function) else {
+        return Err(PinmuxError::UnsupportedPair { raw_pin, function });
+    };
+    match mode {
+        PinmuxMode::Selector(selector) => write_mux_selector(port, bit, selector),
+        PinmuxMode::FixedNoMux => {
+            if matches!(function, PinFunction::Usb) {
+                set_input_enabled_raw(raw_pin, true);
+            }
+        }
+    }
     modify_raw_port_reg(port, 0x06, mask, false);
+    Ok(())
 }
 
-pub fn set_function_for_raw_pin(raw_pin: u16, function: PinFunction) {
-    set_function_raw(raw_pin, function);
+pub fn set_function_for_raw_pin(raw_pin: u16, function: PinFunction) -> Result<(), PinmuxError> {
+    set_function_raw(raw_pin, function)
 }
 
 pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
@@ -641,18 +782,34 @@ pub(crate) fn set_pull_resistor_raw(raw_pin: u16, pull: analog::Pull) {
 pub extern "C" fn gpio_set_func(pin: u32, func: u32) {
     let function = match func as u8 {
         0 => PinFunction::Gpio,
+        1 => PinFunction::Mspi,
+        2 => PinFunction::Swire,
         3 => PinFunction::Uart,
+        4 => PinFunction::I2c,
+        5 => PinFunction::Spi,
+        6 => PinFunction::I2s,
+        8 => PinFunction::Dmic,
+        9 => PinFunction::Sdm,
+        10 => PinFunction::Usb,
+        12 => PinFunction::Cmp,
+        13 => PinFunction::Ats,
         20 => PinFunction::Pwm0,
         21 => PinFunction::Pwm1,
         22 => PinFunction::Pwm2,
         23 => PinFunction::Pwm3,
         24 => PinFunction::Pwm4,
         25 => PinFunction::Pwm5,
+        26 => PinFunction::Pwm0N,
+        27 => PinFunction::Pwm1N,
+        28 => PinFunction::Pwm2N,
+        29 => PinFunction::Pwm3N,
+        30 => PinFunction::Pwm4N,
+        31 => PinFunction::Pwm5N,
         32 => PinFunction::TxCyc2Pa,
         33 => PinFunction::RxCyc2Lna,
         _ => return,
     };
-    set_function_raw(pin as u16, function);
+    let _ = set_function_raw(pin as u16, function);
 }
 
 #[unsafe(no_mangle)]
@@ -713,7 +870,7 @@ pub extern "C" fn gpio_shutdown(pin: u32) {
     modify_raw_port_reg(port, 0x03, mask, false);
     set_input_enabled_raw(pin as u16, false);
     modify_raw_port_reg(port, 0x02, mask, false);
-    set_function_raw(pin as u16, PinFunction::Gpio);
+    let _ = set_function_raw(pin as u16, PinFunction::Gpio);
     set_pull_resistor_raw(pin as u16, analog::Pull::Floating);
 }
 
@@ -853,5 +1010,43 @@ impl<const PORT: u8, const BIT: u8> EhInputPin for Pin<PORT, BIT, Input> {
 
     fn is_low(&mut self) -> Result<bool, Self::Error> {
         Ok(self.input_is_low())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pinmux_mode_for, PinFunction, PinmuxMode};
+
+    #[test]
+    fn pb1_uart_selector_is_slot_01() {
+        assert!(matches!(
+            pinmux_mode_for(0x0102, PinFunction::Uart),
+            Some(PinmuxMode::Selector(0b01))
+        ));
+    }
+
+    #[test]
+    fn rf_alt_default_slot_cases_match_vendor() {
+        assert!(matches!(
+            pinmux_mode_for(0x0280, PinFunction::TxCyc2Pa),
+            Some(PinmuxMode::Selector(0b00))
+        ));
+        assert!(matches!(
+            pinmux_mode_for(0x0301, PinFunction::RxCyc2Lna),
+            Some(PinmuxMode::Selector(0b00))
+        ));
+    }
+
+    #[test]
+    fn pa5_usb_is_fixed_no_mux() {
+        assert!(matches!(
+            pinmux_mode_for(0x0020, PinFunction::Usb),
+            Some(PinmuxMode::FixedNoMux)
+        ));
+    }
+
+    #[test]
+    fn unsupported_pair_is_rejected() {
+        assert!(pinmux_mode_for(0x0104, PinFunction::Pwm0).is_none());
     }
 }

@@ -190,7 +190,10 @@ impl Uart {
                 clk_en0,
                 core::ptr::read_volatile(clk_en0.cast_const()) | FLD_CLK0_UART_EN,
             );
-            core::ptr::write_volatile(rst0, core::ptr::read_volatile(rst0.cast_const()) | FLD_RST0_UART);
+            core::ptr::write_volatile(
+                rst0,
+                core::ptr::read_volatile(rst0.cast_const()) | FLD_RST0_UART,
+            );
             core::ptr::write_volatile(
                 rst0,
                 core::ptr::read_volatile(rst0.cast_const()) & !FLD_RST0_UART,
@@ -215,7 +218,8 @@ impl Uart {
                 (bwpc.wrapping_add(1)).wrapping_mul(3),
             );
             let timeout1 = Self::reg8(REG_UART_RX_TIMEOUT1);
-            let mut timeout1_value = core::ptr::read_volatile(timeout1.cast_const()) & !FLD_UART_TIMEOUT_MUL;
+            let mut timeout1_value =
+                core::ptr::read_volatile(timeout1.cast_const()) & !FLD_UART_TIMEOUT_MUL;
             timeout1_value |= UART_TIMEOUT_MUL_3X_BWPC;
             core::ptr::write_volatile(timeout1, timeout1_value);
 
@@ -240,7 +244,10 @@ impl Uart {
     }
 
     pub fn is_tx_busy(&self) -> bool {
-        unsafe { (core::ptr::read_volatile(Self::reg8(REG_UART_STATUS1).cast_const()) & FLD_UART_TX_DONE) == 0 }
+        unsafe {
+            (core::ptr::read_volatile(Self::reg8(REG_UART_STATUS1).cast_const()) & FLD_UART_TX_DONE)
+                == 0
+        }
     }
 
     pub fn flush(&mut self) {
@@ -252,7 +259,11 @@ impl Uart {
     #[inline(always)]
     pub fn read_ready(&self) -> bool {
         // reg_uart_buf_cnt (0x9c): [3:0] RX count, [7:4] TX count
-        unsafe { (core::ptr::read_volatile(Self::reg8(REG_UART_BUF_CNT).cast_const()) & FLD_UART_RX_BUF_CNT) != 0 }
+        unsafe {
+            (core::ptr::read_volatile(Self::reg8(REG_UART_BUF_CNT).cast_const())
+                & FLD_UART_RX_BUF_CNT)
+                != 0
+        }
     }
 
     pub fn read_byte(&mut self) -> u8 {
@@ -260,7 +271,9 @@ impl Uart {
             core::hint::spin_loop();
         }
         let byte = unsafe {
-            core::ptr::read_volatile(Self::reg8(REG_UART_DATA_BUF0 + self.rx_index as usize).cast_const())
+            core::ptr::read_volatile(
+                Self::reg8(REG_UART_DATA_BUF0 + self.rx_index as usize).cast_const(),
+            )
         };
         self.rx_index = (self.rx_index + 1) & UART_DATA_BUF_RING_MASK;
         byte
@@ -272,7 +285,10 @@ impl Uart {
         }
 
         unsafe {
-            core::ptr::write_volatile(Self::reg8(REG_UART_DATA_BUF0 + self.tx_index as usize), byte);
+            core::ptr::write_volatile(
+                Self::reg8(REG_UART_DATA_BUF0 + self.tx_index as usize),
+                byte,
+            );
         }
         self.tx_index = (self.tx_index + 1) & UART_DATA_BUF_RING_MASK;
     }
@@ -288,7 +304,10 @@ impl Uart {
         }
 
         unsafe {
-            core::ptr::write_volatile(Self::reg8(REG_UART_DATA_BUF0 + self.tx_index as usize), byte);
+            core::ptr::write_volatile(
+                Self::reg8(REG_UART_DATA_BUF0 + self.tx_index as usize),
+                byte,
+            );
         }
         self.tx_index = (self.tx_index + 1) & UART_DATA_BUF_RING_MASK;
         true
@@ -303,7 +322,9 @@ impl Uart {
     #[inline(always)]
     fn tx_fifo_count(&self) -> u8 {
         unsafe {
-            (core::ptr::read_volatile(Self::reg8(REG_UART_BUF_CNT).cast_const()) & FLD_UART_TX_BUF_CNT) >> 4
+            (core::ptr::read_volatile(Self::reg8(REG_UART_BUF_CNT).cast_const())
+                & FLD_UART_TX_BUF_CNT)
+                >> 4
         }
     }
 }
@@ -359,10 +380,10 @@ pub fn apply_pins(pins: Pins) {
     gpio::set_pull_resistor_raw(pins.tx as u16, analog::Pull::PullUp10K);
     gpio::set_pull_resistor_raw(pins.rx as u16, analog::Pull::PullUp10K);
     if !set_uart_mux_vendor_8258(pins.tx as u16) {
-        gpio::set_function_raw(pins.tx as u16, PinFunction::Uart);
+        let _ = gpio::set_function_raw(pins.tx as u16, PinFunction::Uart);
     }
     if !set_uart_mux_vendor_8258(pins.rx as u16) {
-        gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
+        let _ = gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
     }
     // SDK gpio_set_func configures direction side effects internally.
     // Our set_function_raw is mux-only, so set direction explicitly.

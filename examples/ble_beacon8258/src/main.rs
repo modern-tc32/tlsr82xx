@@ -5,8 +5,7 @@ use core::panic::PanicInfo;
 
 use embedded_hal::digital::OutputPin;
 use tlsr82xx_ble::{BeaconAdvertiser, BeaconConfig, BeaconFailureReason};
-use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::gpio::{self, PinFunction};
+use tlsr82xx_boards::tb03f::{self, Board};
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::radio::{Radio, RadioPower};
 use tlsr82xx_hal::timer;
@@ -20,7 +19,8 @@ const ADV_ADDR_LE: [u8; 6] = [0x58, 0x82, 0xDE, 0xC0, 0xDE, 0xC0];
 const ADV_DATA: [u8; 25] = [
     2, 0x01, 0x06, // Flags
     7, 0xFF, 1, 2, 3, 4, 5, 6, // Manufacturer specific data
-    13, 0x09, b'T', b'L', b'S', b'R', b'8', b'2', b'5', b'8', b'R', b'U', b'S', b'T', // Complete Local Name
+    13, 0x09, b'T', b'L', b'S', b'R', b'8', b'2', b'5', b'8', b'R', b'U', b'S',
+    b'T', // Complete Local Name
 ];
 
 const PHASE_BOOT: u8 = 1;
@@ -34,9 +34,6 @@ const ERR_TIMEOUT: u8 = 4;
 const ERR_OTHER_IRQ: u8 = 5;
 const ERR_CONFIG: u8 = 6;
 const ERR_START_TX: u8 = 7;
-
-const PIN_PB2_RAW: u16 = 0x0104;
-const PIN_PB3_RAW: u16 = 0x0108;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -128,7 +125,7 @@ pub extern "C" fn main() -> i32 {
     let _ = board.led_w.set_low();
 
     tlsr82xx_hal::clock::init(tlsr82xx_hal::clock::SysClock::Crystal16M);
-    set_rffe_mapping_tb03();
+    let _ = tb03f::configure_radio_fe_pins();
 
     let radio = Radio::new();
     let config = BeaconConfig {
@@ -204,11 +201,6 @@ pub extern "C" fn main() -> i32 {
             let _ = board.led_y.set_high();
         }
     }
-}
-
-fn set_rffe_mapping_tb03() {
-    gpio::set_function_for_raw_pin(PIN_PB2_RAW, PinFunction::RxCyc2Lna);
-    gpio::set_function_for_raw_pin(PIN_PB3_RAW, PinFunction::TxCyc2Pa);
 }
 
 fn write_status(f: impl FnOnce(&mut BleBeaconStatus)) {
