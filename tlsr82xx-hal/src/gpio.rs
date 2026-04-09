@@ -581,6 +581,10 @@ pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) {
     modify_raw_port_reg(port, 0x06, mask, false);
 }
 
+pub fn set_function_for_raw_pin(raw_pin: u16, function: PinFunction) {
+    set_function_raw(raw_pin, function);
+}
+
 pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
     let (port, _, mask) = decode_raw_pin(raw_pin);
     #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]

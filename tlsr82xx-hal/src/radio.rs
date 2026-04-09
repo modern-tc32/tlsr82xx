@@ -4,11 +4,11 @@ use crate::regs8258::{
     FLD_RF_IRQ_ALL, FLD_RF_IRQ_CMD_DONE, FLD_RF_IRQ_FIRST_TIMEOUT, FLD_RF_IRQ_FSM_TIMEOUT,
     FLD_RF_IRQ_INVALID_PID, FLD_RF_IRQ_RETRY_HIT, FLD_RF_IRQ_RX, FLD_RF_IRQ_RX_CRC_2,
     FLD_RF_IRQ_RX_DR, FLD_RF_IRQ_RX_TIMEOUT, FLD_RF_IRQ_STX_TIMEOUT, FLD_RF_IRQ_TX, FLD_RF_IRQ_TX_DS,
-    FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_DMA3_ADDR, REG_DMA3_ADDR_HI, REG_DMA_TX_RDY0,
-    REG_PLL_RX_FINE_DIV_TUNE, REG_RF_ACCESS_CODE, REG_RF_CHANNEL, REG_RF_CRC, REG_RF_IRQ_MASK,
-    REG_RF_IRQ_STATUS, REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3, REG_RF_MODE_CONTROL,
-    REG_RF_POWER, REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SCHED_TICK, REG_RF_SN,
-    REG_RF_TX_SETTLE, REG_RST1,
+    FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_DMA3_ADDR, REG_DMA3_ADDR_HI, REG_DMA_CHN_EN,
+    REG_DMA_TX_RDY0, REG_PLL_RX_FINE_DIV_TUNE, REG_RF_ACCESS_CODE, REG_RF_CHANNEL, REG_RF_CRC,
+    REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS, REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3,
+    REG_RF_MODE_CONTROL, REG_RF_POWER, REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS,
+    REG_RF_SCHED_TICK, REG_RF_SN, REG_RF_TX_SETTLE, REG_RST1,
 };
 
 const RF_TRX_MODE: u8 = 0xe0;
@@ -221,6 +221,24 @@ impl IrqFlags {
     pub const fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RadioDebugSnapshot {
+    pub irq_mask: u16,
+    pub irq_status: u16,
+    pub mode_ctrl: u8,
+    pub ll_ctrl0: u8,
+    pub ll_ctrl3: u8,
+    pub rx_mode: u8,
+    pub dma_tx_rdy: u8,
+    pub dma_chn_en: u8,
+    pub dma3_addr_hi: u8,
+    pub dma3_addr: u16,
+    pub ble_chn_num: u8,
+    pub ble_set_l: u8,
+    pub ble_set_h: u8,
+    pub ble_band: u8,
 }
 
 #[derive(Debug)]
@@ -552,6 +570,15 @@ impl Radio {
     }
 
     #[inline(always)]
+    pub fn enable_dma_tx_channel(&mut self) {
+        unsafe {
+            let reg = reg8(REG_DMA_CHN_EN);
+            let value = core::ptr::read_volatile(reg.cast_const()) | FLD_DMA_CHN_RF_TX;
+            core::ptr::write_volatile(reg, value);
+        }
+    }
+
+    #[inline(always)]
     pub fn start_stx2rx_at(&mut self, tx_packet: &[u8], tick: u32) -> Result<(), RadioError> {
         self.configure_tx_buffer(tx_packet)?;
         self.enable_scheduled_command(RF_CMD_STX2RX, tick);
@@ -772,5 +799,27 @@ impl Radio {
     #[inline(always)]
     pub fn is_receiving_packet(&self) -> bool {
         unsafe { ((core::ptr::read_volatile(reg8(REG_RF_RX_STATUS).cast_const()) >> 5) & 1) != 0 }
+    }
+
+    #[inline(always)]
+    pub fn debug_snapshot(&self) -> RadioDebugSnapshot {
+        unsafe {
+            RadioDebugSnapshot {
+                irq_mask: core::ptr::read_volatile(reg16(REG_RF_IRQ_MASK).cast_const()),
+                irq_status: core::ptr::read_volatile(reg16(REG_RF_IRQ_STATUS).cast_const()),
+                mode_ctrl: core::ptr::read_volatile(reg8(REG_RF_MODE_CONTROL).cast_const()),
+                ll_ctrl0: core::ptr::read_volatile(reg8(REG_RF_LL_CTRL_0).cast_const()),
+                ll_ctrl3: core::ptr::read_volatile(reg8(REG_RF_LL_CTRL_3).cast_const()),
+                rx_mode: core::ptr::read_volatile(reg8(REG_RF_RX_MODE).cast_const()),
+                dma_tx_rdy: core::ptr::read_volatile(reg8(REG_DMA_TX_RDY0).cast_const()),
+                dma_chn_en: core::ptr::read_volatile(reg8(REG_DMA_CHN_EN).cast_const()),
+                dma3_addr_hi: core::ptr::read_volatile(reg8(REG_DMA3_ADDR_HI).cast_const()),
+                dma3_addr: core::ptr::read_volatile(reg16(REG_DMA3_ADDR).cast_const()),
+                ble_chn_num: core::ptr::read_volatile(reg8(REG_RF_BLE_CHANNEL_NUM).cast_const()),
+                ble_set_l: core::ptr::read_volatile(reg8(REG_RF_CHN_SET_L).cast_const()),
+                ble_set_h: core::ptr::read_volatile(reg8(REG_RF_CHN_SET_H).cast_const()),
+                ble_band: core::ptr::read_volatile(reg8(REG_RF_CHN_BAND).cast_const()),
+            }
+        }
     }
 }

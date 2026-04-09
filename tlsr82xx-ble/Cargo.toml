@@ -1,0 +1,16 @@
+[package]
+name = "tlsr82xx-ble"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = []
+chip-8258 = ["tlsr82xx-hal/chip-8258"]
+
+[dependencies]
+tlsr82xx-hal = { path = "../tlsr82xx-hal" }
+
+[lib]
+path = "src/lib.rs"
