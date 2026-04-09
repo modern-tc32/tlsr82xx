@@ -5,6 +5,7 @@ use core::panic::PanicInfo;
 
 use embedded_io::Write as _;
 use tlsr82xx_boards::tb03f;
+use tlsr82xx_hal::gpio::GpioExt;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
 use tlsr82xx_hal::uart::{Config, UartExt};
@@ -14,9 +15,10 @@ mod platform;
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     let _ = platform::drv_platform_init();
-    tb03f::configure_uart_pins();
 
     let peripherals = unsafe { pac::Peripherals::steal() };
+    let mut pins = peripherals.gpio.split();
+    tb03f::configure_uart_pins(&mut pins);
     let mut uart = peripherals.uart.constrain();
     uart.configure(Config::new(115_200));
 

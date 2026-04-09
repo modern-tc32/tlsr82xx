@@ -8,7 +8,7 @@ use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::gpio::GpioExt;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
-use tlsr82xx_hal::uart::{self, Config, Pins as UartPins, UartExt};
+use tlsr82xx_hal::uart::{self, Config, UartExt};
 
 mod platform;
 
@@ -22,9 +22,9 @@ pub extern "C" fn main() -> i32 {
     let _ = platform::init();
 
     let peripherals = unsafe { pac::Peripherals::steal() };
-    let mut board = Board::from_pins(peripherals.gpio.split());
-
-    uart::apply_pins(UartPins::PB1_PA0);
+    let mut pins = peripherals.gpio.split();
+    uart::apply_pins(&mut pins.pb1, &mut pins.pa0);
+    let mut board = Board::from_pins(pins);
     let mut uart = peripherals.uart.constrain();
     uart.configure(Config::new(BAUDRATE));
 

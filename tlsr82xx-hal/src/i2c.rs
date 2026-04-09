@@ -4,6 +4,7 @@ use embedded_hal::i2c::{
 };
 
 use crate::clock;
+use crate::gpio;
 use crate::mmio::reg8;
 use crate::regs8258::{
     FLD_CLK0_I2C_EN, FLD_I2C_CMD_ACK, FLD_I2C_CMD_BUSY, FLD_I2C_CMD_DI, FLD_I2C_CMD_DO,
@@ -71,6 +72,23 @@ pub struct I2c {
     frequency_hz: u32,
 }
 
+pub trait I2cPins {
+    const PIN_GROUP: I2cPinGroup;
+}
+
+impl<'a, SdaMode, SclMode> I2cPins for (&'a mut gpio::PA3<SdaMode>, &'a mut gpio::PA4<SclMode>) {
+    const PIN_GROUP: I2cPinGroup = I2cPinGroup::A3A4;
+}
+impl<'a, SdaMode, SclMode> I2cPins for (&'a mut gpio::PB6<SdaMode>, &'a mut gpio::PD7<SclMode>) {
+    const PIN_GROUP: I2cPinGroup = I2cPinGroup::B6D7;
+}
+impl<'a, SdaMode, SclMode> I2cPins for (&'a mut gpio::PC0<SdaMode>, &'a mut gpio::PC1<SclMode>) {
+    const PIN_GROUP: I2cPinGroup = I2cPinGroup::C0C1;
+}
+impl<'a, SdaMode, SclMode> I2cPins for (&'a mut gpio::PC2<SdaMode>, &'a mut gpio::PC3<SclMode>) {
+    const PIN_GROUP: I2cPinGroup = I2cPinGroup::C2C3;
+}
+
 impl I2c {
     pub fn new(config: Config) -> Self {
         configure_gpio(config.pin_group);
@@ -83,6 +101,11 @@ impl I2c {
 
     pub fn with_frequency(pin_group: I2cPinGroup, frequency_hz: u32) -> Self {
         Self::new(Config::new(pin_group, frequency_hz))
+    }
+
+    pub fn with_pins<PINS: I2cPins>(pins: PINS, frequency_hz: u32) -> Self {
+        let _ = pins;
+        Self::new(Config::new(PINS::PIN_GROUP, frequency_hz))
     }
 
     pub fn frequency_hz(&self) -> u32 {

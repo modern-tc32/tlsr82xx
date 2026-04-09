@@ -6,8 +6,9 @@ use core::panic::PanicInfo;
 use embedded_hal::digital::{OutputPin, PinState};
 use embedded_hal::spi::SpiBus;
 use tlsr82xx_boards::tb03f::Board;
+use tlsr82xx_hal::gpio::GpioExt;
 use tlsr82xx_hal::pac;
-use tlsr82xx_hal::spi::{Config, Spi, SpiPinGroup};
+use tlsr82xx_hal::spi::Spi;
 use tlsr82xx_hal::timer;
 
 mod platform;
@@ -21,12 +22,14 @@ const LED_W_MASK: u8 = 1 << 1;
 pub extern "C" fn main() -> i32 {
     let _ = platform::init();
 
-    let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
-    let mut spi = Spi::new(Config::new(
-        SpiPinGroup::A2A3A4D6,
+    let peripherals = unsafe { pac::Peripherals::steal() };
+    let mut pins = peripherals.gpio.split();
+    let mut spi = Spi::with_pins(
+        (&mut pins.pa2, &mut pins.pa3, &mut pins.pa4, &mut pins.pd6),
         1_000_000,
         embedded_hal::spi::MODE_0,
-    ));
+    );
+    let mut board = Board::from_pins(pins);
     let mut tick = timer::clock_time();
     let mut value = INITIAL_TEST_PATTERN;
 

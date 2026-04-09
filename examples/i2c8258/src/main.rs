@@ -6,7 +6,8 @@ use core::panic::PanicInfo;
 use embedded_hal::digital::{OutputPin, PinState};
 use embedded_hal::i2c::I2c as _;
 use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::i2c::{Config, I2c, I2cPinGroup};
+use tlsr82xx_hal::gpio::GpioExt;
+use tlsr82xx_hal::i2c::I2c;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
 
@@ -19,8 +20,10 @@ const SCAN_END: u8 = 0x77;
 pub extern "C" fn main() -> i32 {
     let _ = platform::init();
 
-    let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
-    let mut i2c = I2c::new(Config::new(I2cPinGroup::C0C1, 100_000));
+    let peripherals = unsafe { pac::Peripherals::steal() };
+    let mut pins = peripherals.gpio.split();
+    let mut i2c = I2c::with_pins((&mut pins.pc0, &mut pins.pc1), 100_000);
+    let mut board = Board::from_pins(pins);
 
     let mut tick = timer::clock_time();
 

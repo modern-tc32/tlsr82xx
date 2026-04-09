@@ -3,6 +3,7 @@ use embedded_hal::spi::{
 };
 
 use crate::clock;
+use crate::gpio;
 use crate::mmio::reg8;
 use crate::regs8258::{
     FLD_CLK0_SPI_EN, FLD_SPI_BUSY, FLD_SPI_DATA_OUT_DIS, FLD_SPI_ENABLE,
@@ -68,6 +69,32 @@ pub struct Spi {
     mode: Mode,
 }
 
+pub trait SpiPins {
+    const PIN_GROUP: SpiPinGroup;
+}
+
+impl<'a, A2Mode, A3Mode, A4Mode, D6Mode> SpiPins
+    for (
+        &'a mut gpio::PA2<A2Mode>,
+        &'a mut gpio::PA3<A3Mode>,
+        &'a mut gpio::PA4<A4Mode>,
+        &'a mut gpio::PD6<D6Mode>,
+    )
+{
+    const PIN_GROUP: SpiPinGroup = SpiPinGroup::A2A3A4D6;
+}
+
+impl<'a, B6Mode, B7Mode, D2Mode, D7Mode> SpiPins
+    for (
+        &'a mut gpio::PB6<B6Mode>,
+        &'a mut gpio::PB7<B7Mode>,
+        &'a mut gpio::PD2<D2Mode>,
+        &'a mut gpio::PD7<D7Mode>,
+    )
+{
+    const PIN_GROUP: SpiPinGroup = SpiPinGroup::B6B7D2D7;
+}
+
 impl Spi {
     pub fn new(config: Config) -> Self {
         configure_gpio(config.pin_group);
@@ -77,6 +104,11 @@ impl Spi {
         };
         spi.init_registers(config.share_mode);
         spi
+    }
+
+    pub fn with_pins<PINS: SpiPins>(pins: PINS, frequency_hz: u32, mode: Mode) -> Self {
+        let _ = pins;
+        Self::new(Config::new(PINS::PIN_GROUP, frequency_hz, mode))
     }
 
     pub fn frequency_hz(&self) -> u32 {

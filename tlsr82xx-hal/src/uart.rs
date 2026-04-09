@@ -84,56 +84,85 @@ pub struct Config {
     pub stop_bits: StopBits,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u32)]
-pub enum TxPin {
-    Pa2 = 0x0004,
-    Pb1 = 0x0102,
-    Pc2 = 0x0204,
-    Pd0 = 0x0301,
-    Pd3 = 0x0308,
-    Pd7 = 0x0380,
+pub trait UartTxPin {
+    fn raw_pin(&self) -> RawPin;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u32)]
-pub enum RxPin {
-    Pa0 = 0x0001,
-    Pb0 = 0x0101,
-    Pb7 = 0x0180,
-    Pc3 = 0x0208,
-    Pc5 = 0x0220,
-    Pd6 = 0x0340,
+pub trait UartRxPin {
+    fn raw_pin(&self) -> RawPin;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Pins {
-    pub tx: TxPin,
-    pub rx: RxPin,
-}
-
-impl Pins {
-    pub const fn new(tx: TxPin, rx: RxPin) -> Self {
-        Self { tx, rx }
-    }
-
-    pub const PA2_PA0: Self = Self::new(TxPin::Pa2, RxPin::Pa0);
-    pub const PB1_PA0: Self = Self::new(TxPin::Pb1, RxPin::Pa0);
-    pub const PB1_PB0: Self = Self::new(TxPin::Pb1, RxPin::Pb0);
-    pub const PC2_PC3: Self = Self::new(TxPin::Pc2, RxPin::Pc3);
-}
-
-impl TxPin {
+impl<MODE> UartTxPin for gpio::PA2<MODE> {
     #[inline(always)]
-    fn raw_pin(self) -> RawPin {
-        RawPin::try_from_u16(self as u16).expect("TxPin enum contains valid GPIO raw code")
+    fn raw_pin(&self) -> RawPin {
+        gpio::PA2::<MODE>::raw_pin()
     }
 }
-
-impl RxPin {
+impl<MODE> UartTxPin for gpio::PB1<MODE> {
     #[inline(always)]
-    fn raw_pin(self) -> RawPin {
-        RawPin::try_from_u16(self as u16).expect("RxPin enum contains valid GPIO raw code")
+    fn raw_pin(&self) -> RawPin {
+        gpio::PB1::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartTxPin for gpio::PC2<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PC2::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartTxPin for gpio::PD0<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PD0::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartTxPin for gpio::PD3<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PD3::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartTxPin for gpio::PD7<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PD7::<MODE>::raw_pin()
+    }
+}
+
+impl<MODE> UartRxPin for gpio::PA0<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PA0::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartRxPin for gpio::PB0<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PB0::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartRxPin for gpio::PB7<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PB7::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartRxPin for gpio::PC3<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PC3::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartRxPin for gpio::PC5<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PC5::<MODE>::raw_pin()
+    }
+}
+impl<MODE> UartRxPin for gpio::PD6<MODE> {
+    #[inline(always)]
+    fn raw_pin(&self) -> RawPin {
+        gpio::PD6::<MODE>::raw_pin()
     }
 }
 
@@ -390,9 +419,9 @@ impl IoRead for Uart {
     }
 }
 
-pub fn apply_pins(pins: Pins) {
-    let tx = pins.tx.raw_pin();
-    let rx = pins.rx.raw_pin();
+pub fn apply_pins<TX: UartTxPin, RX: UartRxPin>(tx: &mut TX, rx: &mut RX) {
+    let tx = tx.raw_pin();
+    let rx = rx.raw_pin();
     gpio::set_pull_resistor_raw(tx, analog::Pull::PullUp10K);
     gpio::set_pull_resistor_raw(rx, analog::Pull::PullUp10K);
     if !set_uart_mux_vendor_8258(tx) {

@@ -5,7 +5,7 @@ use tlsr82xx_hal::gpio::{
     PA7, PB2, PB3, PB4, PB5,
 };
 use tlsr82xx_hal::pac;
-use tlsr82xx_hal::uart::{self, Pins as UartPins};
+use tlsr82xx_hal::uart;
 
 pub struct Board {
     pub led_y: PB4<Output>,
@@ -45,8 +45,8 @@ pub fn configure_rgb_pins(pins: &mut Pins) {
     let _ = pins.pc4.set_function(PinFunction::Pwm2);
 }
 
-pub fn configure_uart_pins() {
-    uart::apply_pins(UartPins::PB1_PA0);
+pub fn configure_uart_pins(pins: &mut Pins) {
+    uart::apply_pins(&mut pins.pb1, &mut pins.pa0);
 }
 
 pub fn configure_radio_fe_pins() -> Result<(), PinmuxError> {
