@@ -79,6 +79,7 @@ pub(crate) const REG_DFIFO0_ADDR: usize = 0x0080_0c40;
 pub(crate) const REG_DFIFO1_ADDR: usize = 0x0080_0c44;
 pub(crate) const REG_DFIFO0_SIZE: usize = 0x0080_0c48;
 pub(crate) const REG_DMA_CHN_EN: usize = 0x0080_0c20;
+pub(crate) const REG_DMA_TX_RDY0: usize = 0x0080_0c24;
 
 // Used by vendor pm.o, but no alias was found in `register.h`.
 pub(crate) const REG_WAKEUP_SRC: usize = 0x0080_0040;

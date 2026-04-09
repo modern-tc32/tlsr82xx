@@ -4,11 +4,11 @@ use crate::regs8258::{
     FLD_RF_IRQ_ALL, FLD_RF_IRQ_CMD_DONE, FLD_RF_IRQ_FIRST_TIMEOUT, FLD_RF_IRQ_FSM_TIMEOUT,
     FLD_RF_IRQ_INVALID_PID, FLD_RF_IRQ_RETRY_HIT, FLD_RF_IRQ_RX, FLD_RF_IRQ_RX_CRC_2,
     FLD_RF_IRQ_RX_DR, FLD_RF_IRQ_RX_TIMEOUT, FLD_RF_IRQ_STX_TIMEOUT, FLD_RF_IRQ_TX, FLD_RF_IRQ_TX_DS,
-    FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_DMA3_ADDR, REG_DMA3_ADDR_HI, REG_PLL_RX_FINE_DIV_TUNE,
-    REG_RF_ACCESS_CODE, REG_RF_CHANNEL, REG_RF_CRC, REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS,
-    REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3, REG_RF_MODE_CONTROL, REG_RF_POWER,
-    REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SCHED_TICK, REG_RF_SN, REG_RF_TX_SETTLE,
-    REG_RST1,
+    FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_DMA3_ADDR, REG_DMA3_ADDR_HI, REG_DMA_TX_RDY0,
+    REG_PLL_RX_FINE_DIV_TUNE, REG_RF_ACCESS_CODE, REG_RF_CHANNEL, REG_RF_CRC, REG_RF_IRQ_MASK,
+    REG_RF_IRQ_STATUS, REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3, REG_RF_MODE_CONTROL,
+    REG_RF_POWER, REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SCHED_TICK, REG_RF_SN,
+    REG_RF_TX_SETTLE, REG_RST1,
 };
 
 const RF_TRX_MODE: u8 = 0xe0;
@@ -17,8 +17,25 @@ const DEFAULT_TX_SETTLE_US: u16 = 113;
 const RF_CMD_BRX: u8 = 0x82;
 const RF_CMD_SRX2TX: u8 = 0x85;
 const RF_CMD_STX2RX: u8 = 0x87;
+const FLD_DMA_CHN_RF_TX: u8 = 1 << 3;
 const BLE_ADV_ACCESS_CODE: u32 = 0xd6be898e;
 const BLE_ADV_CRC_INIT: u32 = 0x0055_5555;
+const REG_RF_BLE_CHANNEL_NUM: usize = 0x0080_040d;
+const REG_RF_CHN_SET_L: usize = 0x0080_1244;
+const REG_RF_CHN_SET_H: usize = 0x0080_1245;
+const REG_RF_CHN_BAND: usize = 0x0080_1228;
+const REG_RF_PHY_1220: usize = 0x0080_1220;
+const REG_RF_PHY_1273: usize = 0x0080_1273;
+const REG_RF_PHY_1236: usize = 0x0080_1236;
+const REG_RF_PHY_0401: usize = 0x0080_0401;
+const REG_RF_PHY_0402: usize = 0x0080_0402;
+const REG_RF_PHY_0420: usize = 0x0080_0420;
+const REG_RF_PHY_0460: usize = 0x0080_0460;
+const REG_RF_PHY_0464: usize = 0x0080_0464;
+const REG_RF_PHY_12D2: usize = 0x0080_12d2;
+const REG_RF_PHY_127B: usize = 0x0080_127b;
+const REG_RF_PHY_0430: usize = 0x0080_0430;
+const REG_RF_PHY_0F06: usize = 0x0080_0f06;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RadioMode {
@@ -284,8 +301,9 @@ impl Radio {
 
     #[inline(always)]
     pub fn set_tx_settle_us(&mut self, settle_us: u16) {
+        let hw = settle_us.saturating_sub(1) & 0x0fff;
         unsafe {
-            core::ptr::write_volatile(reg16(REG_RF_TX_SETTLE), settle_us);
+            core::ptr::write_volatile(reg16(REG_RF_TX_SETTLE), hw);
         }
     }
 
@@ -409,15 +427,55 @@ impl Radio {
         if channel > 39 {
             return Err(RadioError::InvalidBleChannel(channel));
         }
-        let pll_freq_mhz = match channel {
-            37 => 2402,
-            38 => 2426,
-            39 => 2480,
-            0..=10 => 2404 + (channel as u16) * 2,
-            _ => 2428 + ((channel as u16) - 11) * 2,
+        unsafe {
+            core::ptr::write_volatile(reg8(REG_RF_BLE_CHANNEL_NUM), channel);
+        }
+        let (set, band) = match channel {
+            37 => (0x0962u16, 0x18u8),
+            38 => (0x097au16, 0x14u8),
+            39 => (0x09b0u16, 0x0cu8),
+            0..=10 => {
+                let set = 0x0960u16 + ((channel as u16) + 2);
+                (set, Self::ble_band_bits(set))
+            }
+            _ => {
+                let set = 0x0960u16 + ((channel as u16) + 3);
+                (set, Self::ble_band_bits(set))
+            }
         };
-        self.apply_channel_frequency(channel, pll_freq_mhz);
+        self.apply_ble_channel_set(set, band);
         Ok(())
+    }
+
+    #[inline(always)]
+    fn ble_band_bits(set: u16) -> u8 {
+        if set > 0x09be {
+            0x04
+        } else if set > 0x09a0 {
+            0x08
+        } else if set > 0x0982 {
+            0x0c
+        } else if set > 0x0964 {
+            0x10
+        } else if set > 0x094b {
+            0x14
+        } else {
+            0x18
+        }
+    }
+
+    #[inline(always)]
+    fn apply_ble_channel_set(&mut self, set: u16, band: u8) {
+        unsafe {
+            core::ptr::write_volatile(reg8(REG_RF_CHN_SET_L), (((set << 2) as u8) | 0x01) as u8);
+            let ch_h = reg8(REG_RF_CHN_SET_H);
+            let ch_h_new = (core::ptr::read_volatile(ch_h.cast_const()) & !0x3f) | (((set >> 6) as u8) & 0x3f);
+            core::ptr::write_volatile(ch_h, ch_h_new);
+
+            let band_reg = reg8(REG_RF_CHN_BAND);
+            let band_new = (core::ptr::read_volatile(band_reg.cast_const()) & !0x3c) | (band & 0x3c);
+            core::ptr::write_volatile(band_reg, band_new);
+        }
     }
 
     #[inline(always)]
@@ -470,9 +528,45 @@ impl Radio {
     }
 
     #[inline(always)]
+    pub fn start_srx2tx_now(&mut self, tx_packet: &[u8]) -> Result<(), RadioError> {
+        self.configure_tx_buffer(tx_packet)?;
+        unsafe {
+            let ll_ctrl3 = reg8(REG_RF_LL_CTRL_3);
+            let value = core::ptr::read_volatile(ll_ctrl3.cast_const()) & !0x04;
+            core::ptr::write_volatile(ll_ctrl3, value);
+            core::ptr::write_volatile(reg8(REG_RF_MODE_CONTROL), RF_CMD_SRX2TX);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn tx_packet_now(&mut self, tx_packet: &[u8]) -> Result<(), RadioError> {
+        self.configure_tx_buffer(tx_packet)?;
+        unsafe {
+            core::ptr::write_volatile(reg8(REG_DMA3_ADDR_HI), 0x04);
+            let tx_rdy = reg8(REG_DMA_TX_RDY0);
+            let value = core::ptr::read_volatile(tx_rdy.cast_const()) | FLD_DMA_CHN_RF_TX;
+            core::ptr::write_volatile(tx_rdy, value);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
     pub fn start_stx2rx_at(&mut self, tx_packet: &[u8], tick: u32) -> Result<(), RadioError> {
         self.configure_tx_buffer(tx_packet)?;
         self.enable_scheduled_command(RF_CMD_STX2RX, tick);
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn start_stx2rx_now(&mut self, tx_packet: &[u8]) -> Result<(), RadioError> {
+        self.configure_tx_buffer(tx_packet)?;
+        unsafe {
+            let ll_ctrl3 = reg8(REG_RF_LL_CTRL_3);
+            let value = core::ptr::read_volatile(ll_ctrl3.cast_const()) & !0x04;
+            core::ptr::write_volatile(ll_ctrl3, value);
+            core::ptr::write_volatile(reg8(REG_RF_MODE_CONTROL), RF_CMD_STX2RX);
+        }
         Ok(())
     }
 
@@ -537,7 +631,51 @@ impl Radio {
 
     #[inline(always)]
     pub fn init_ble_advertising(&mut self) -> Result<(), RadioError> {
+        self.apply_ble_phy_init();
         self.apply_ble_config(BleConfig::advertising(37))
+    }
+
+    #[inline(always)]
+    pub fn init_ble_vendor_1m_phy(&mut self) {
+        self.apply_ble_phy_init();
+    }
+
+    fn apply_ble_phy_init(&mut self) {
+        unsafe {
+            // Mirror vendor B85/TLSR8258 BLE 1M bring-up sequence.
+            core::ptr::write_volatile(reg8(REG_RF_PHY_12D2), 0x9b);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_12D2 + 1), 0x19);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_127B), 0x0e);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0430), 0x36);
+
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 0), 0x16);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 1), 0x0a);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 2), 0x20);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 3), 0x23);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 0x2a), 0x0e);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 0x2b), 0x09);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 0x56), 0x45);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 0x57), 0x7b);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1220 + 0x59), 0x08);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1273), 0x01);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1236 + 0), 0xb7);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1236 + 1), 0x8e);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1236 + 2), 0xc4);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_1236 + 3), 0x71);
+
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0401), 0x01);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0402), 0x46);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0402 + 2), 0xf5);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0402 + 3), 0x04);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0420), 0x1e);
+            core::ptr::write_volatile(reg32(REG_RF_PHY_0460), 0x5f4f4434);
+            core::ptr::write_volatile(reg16(REG_RF_PHY_0464), 0x766b);
+
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0F06), 0x00);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0F06 + 6), 0x50);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0F06 + 8), 0x00);
+            core::ptr::write_volatile(reg8(REG_RF_PHY_0F06 + 10), 0x00);
+        }
     }
 
     #[inline(always)]
