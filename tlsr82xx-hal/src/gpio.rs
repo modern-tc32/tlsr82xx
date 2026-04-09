@@ -44,6 +44,8 @@ pub enum PinFunction {
     Pwm3 = 23,
     Pwm4 = 24,
     Pwm5 = 25,
+    TxCyc2Pa = 32,
+    RxCyc2Lna = 33,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -560,6 +562,8 @@ fn selector_for_function(raw_pin: u16, function: PinFunction) -> Option<u8> {
         (0x0208, PinFunction::Uart) => Some(0b01), // PC3
         (0x0208, PinFunction::Pwm1) => Some(0b00), // PC3
         (0x0210, PinFunction::Pwm2) => Some(0b00), // PC4
+        (0x0104, PinFunction::RxCyc2Lna) => Some(0b10), // PB2
+        (0x0108, PinFunction::TxCyc2Pa) => Some(0b10),  // PB3
         _ => None,
     }
 }
@@ -640,6 +644,8 @@ pub extern "C" fn gpio_set_func(pin: u32, func: u32) {
         23 => PinFunction::Pwm3,
         24 => PinFunction::Pwm4,
         25 => PinFunction::Pwm5,
+        32 => PinFunction::TxCyc2Pa,
+        33 => PinFunction::RxCyc2Lna,
         _ => return,
     };
     set_function_raw(pin as u16, function);

@@ -105,11 +105,6 @@ fn main() {
         println!("cargo:rustc-link-arg={}", object.display());
     }
 
-    if env::var("CARGO_PKG_NAME").ok().as_deref() == Some("tlsr82xx-ble-beacon8258") {
-        let vendor_lib = repo_root.join("tc_ble_single_sdk/proj_lib/liblt_825x.a");
-        println!("cargo:rerun-if-changed={}", vendor_lib.display());
-        println!("cargo:rustc-link-arg={}", vendor_lib.display());
-    }
 }
 
 fn resolve_path(key: &str, repo_root: &Path, default: impl FnOnce() -> PathBuf) -> PathBuf {
