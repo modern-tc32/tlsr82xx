@@ -2,7 +2,7 @@ use core::fmt;
 
 use embedded_io::{ErrorType as IoErrorType, Read as IoRead, Write as IoWrite};
 
-use crate::{analog, clock, gpio, gpio::PinFunction, pac};
+use crate::{analog, clock, gpio, gpio::PinFunction, gpio::RawPin, pac};
 
 const RESET_BASE: usize = 0x0080_0060;
 const UART_BASE: usize = 0x0080_0090;
@@ -121,6 +121,20 @@ impl Pins {
     pub const PB1_PA0: Self = Self::new(TxPin::Pb1, RxPin::Pa0);
     pub const PB1_PB0: Self = Self::new(TxPin::Pb1, RxPin::Pb0);
     pub const PC2_PC3: Self = Self::new(TxPin::Pc2, RxPin::Pc3);
+}
+
+impl TxPin {
+    #[inline(always)]
+    fn raw_pin(self) -> RawPin {
+        RawPin::try_from_u16(self as u16).expect("TxPin enum contains valid GPIO raw code")
+    }
+}
+
+impl RxPin {
+    #[inline(always)]
+    fn raw_pin(self) -> RawPin {
+        RawPin::try_from_u16(self as u16).expect("RxPin enum contains valid GPIO raw code")
+    }
 }
 
 impl Config {
@@ -377,30 +391,32 @@ impl IoRead for Uart {
 }
 
 pub fn apply_pins(pins: Pins) {
-    gpio::set_pull_resistor_raw(pins.tx as u16, analog::Pull::PullUp10K);
-    gpio::set_pull_resistor_raw(pins.rx as u16, analog::Pull::PullUp10K);
-    if !set_uart_mux_vendor_8258(pins.tx as u16) {
-        let _ = gpio::set_function_raw(pins.tx as u16, PinFunction::Uart);
+    let tx = pins.tx.raw_pin();
+    let rx = pins.rx.raw_pin();
+    gpio::set_pull_resistor_raw(tx, analog::Pull::PullUp10K);
+    gpio::set_pull_resistor_raw(rx, analog::Pull::PullUp10K);
+    if !set_uart_mux_vendor_8258(tx) {
+        let _ = gpio::set_function_raw(tx, PinFunction::Uart);
     }
-    if !set_uart_mux_vendor_8258(pins.rx as u16) {
-        let _ = gpio::set_function_raw(pins.rx as u16, PinFunction::Uart);
+    if !set_uart_mux_vendor_8258(rx) {
+        let _ = gpio::set_function_raw(rx, PinFunction::Uart);
     }
     // Vendor GPIO mux path configures direction side effects internally.
     // Our set_function_raw is mux-only, so set direction explicitly.
-    gpio::set_output_enabled_raw(pins.tx as u16, true);
-    gpio::set_output_enabled_raw(pins.rx as u16, false);
-    gpio::set_input_enabled_raw(pins.tx as u16, true);
-    gpio::set_input_enabled_raw(pins.rx as u16, true);
+    gpio::set_output_enabled_raw(tx, true);
+    gpio::set_output_enabled_raw(rx, false);
+    gpio::set_input_enabled_raw(tx, true);
+    gpio::set_input_enabled_raw(rx, true);
 }
 
 #[inline(always)]
-fn set_uart_mux_vendor_8258(raw_pin: u16) -> bool {
+fn set_uart_mux_vendor_8258(raw_pin: RawPin) -> bool {
     // Match vendor GPIO mux encodings for AS_UART on the pins used by TB03F loopback.
     // PA0: reg_mux_func_a1 (0x5a8) mask=0xfc val=0x02
     // PB1: reg_mux_func_b1 (0x5aa) mask=0xf3 val=0x04
     // Also clear reg_gpio_func bit so pin is in peripheral mode.
     unsafe {
-        match raw_pin {
+        match raw_pin.as_u16() {
             0x0001 => {
                 let mux_v = core::ptr::read_volatile(REG_MUX_FUNC_A1.cast_const());
                 core::ptr::write_volatile(

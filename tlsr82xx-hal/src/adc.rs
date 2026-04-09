@@ -559,7 +559,7 @@ fn sample_current_config_with_fluctuation() -> AdcSample {
     }
 }
 use crate::analog;
-use crate::gpio::{self, PinFunction};
+use crate::gpio::{self, Input, PinFunction, RawPin, PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PC4, PC5};
 use crate::mmio::{reg16, reg8};
 use crate::regs8258::{
     AREG_ADC_AIN_SCALE, AREG_ADC_CHANNEL_ENABLE, AREG_ADC_MISC_H, AREG_ADC_MISC_INPUT,
@@ -586,18 +586,18 @@ pub enum AdcGpioPin {
 
 impl AdcGpioPin {
     #[inline(always)]
-    pub const fn raw_pin(self) -> u16 {
+    pub const fn raw_pin(self) -> RawPin {
         match self {
-            Self::Pb0 => 0x0101,
-            Self::Pb1 => 0x0102,
-            Self::Pb2 => 0x0104,
-            Self::Pb3 => 0x0108,
-            Self::Pb4 => 0x0110,
-            Self::Pb5 => 0x0120,
-            Self::Pb6 => 0x0140,
-            Self::Pb7 => 0x0180,
-            Self::Pc4 => 0x0210,
-            Self::Pc5 => 0x0220,
+            Self::Pb0 => PB0::<Input>::raw_pin(),
+            Self::Pb1 => PB1::<Input>::raw_pin(),
+            Self::Pb2 => PB2::<Input>::raw_pin(),
+            Self::Pb3 => PB3::<Input>::raw_pin(),
+            Self::Pb4 => PB4::<Input>::raw_pin(),
+            Self::Pb5 => PB5::<Input>::raw_pin(),
+            Self::Pb6 => PB6::<Input>::raw_pin(),
+            Self::Pb7 => PB7::<Input>::raw_pin(),
+            Self::Pc4 => PC4::<Input>::raw_pin(),
+            Self::Pc5 => PC5::<Input>::raw_pin(),
         }
     }
 

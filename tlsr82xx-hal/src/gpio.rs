@@ -65,9 +65,36 @@ pub enum PinFunction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct RawPin(u16);
+
+impl RawPin {
+    #[inline(always)]
+    pub const fn from_parts(port: u8, bit: u8) -> Self {
+        Self(((port as u16) << 8) | (1u16 << bit))
+    }
+
+    #[inline(always)]
+    pub const fn as_u16(self) -> u16 {
+        self.0
+    }
+
+    pub fn try_from_u16(raw: u16) -> Result<Self, PinmuxError> {
+        if decode_raw_pin_checked_u16(raw).is_some() {
+            Ok(Self(raw))
+        } else {
+            Err(PinmuxError::InvalidRawPin(raw))
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PinmuxError {
     InvalidRawPin(u16),
-    UnsupportedPair { raw_pin: u16, function: PinFunction },
+    UnsupportedPair {
+        raw_pin: RawPin,
+        function: PinFunction,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -231,8 +258,8 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
     }
 
     #[inline(always)]
-    pub const fn raw_pin() -> u16 {
-        ((PORT as u16) << 8) | Self::mask() as u16
+    pub const fn raw_pin() -> RawPin {
+        RawPin::from_parts(PORT, BIT)
     }
 
     pub fn set_function(&mut self, function: PinFunction) -> Result<(), PinmuxError> {
@@ -532,20 +559,23 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
 }
 
 #[inline(always)]
-fn decode_raw_pin(raw_pin: u16) -> (u8, u8, u8) {
-    let port = (raw_pin >> 8) as u8;
-    let mask = raw_pin as u8;
+fn decode_raw_pin(raw_pin: RawPin) -> (u8, u8, u8) {
+    let raw = raw_pin.as_u16();
+    let port = (raw >> 8) as u8;
+    let mask = raw as u8;
     debug_assert!(mask.is_power_of_two());
     let bit = mask.trailing_zeros() as u8;
     (port, bit, mask)
 }
 
 #[inline(always)]
-fn decode_raw_pin_checked(raw_pin: u16) -> Option<(u8, u8, u8)> {
-    let (port, bit, mask) = decode_raw_pin(raw_pin);
+fn decode_raw_pin_checked_u16(raw_pin: u16) -> Option<(u8, u8, u8)> {
+    let port = (raw_pin >> 8) as u8;
+    let mask = raw_pin as u8;
     if !mask.is_power_of_two() {
         return None;
     }
+    let bit = mask.trailing_zeros() as u8;
     if port > PORT_E {
         return None;
     }
@@ -553,6 +583,11 @@ fn decode_raw_pin_checked(raw_pin: u16) -> Option<(u8, u8, u8)> {
         return None;
     }
     Some((port, bit, mask))
+}
+
+#[inline(always)]
+fn decode_raw_pin_checked(raw_pin: RawPin) -> Option<(u8, u8, u8)> {
+    decode_raw_pin_checked_u16(raw_pin.as_u16())
 }
 
 #[inline(always)]
@@ -592,8 +627,8 @@ enum PinmuxMode {
 }
 
 #[inline(always)]
-fn pinmux_mode_for(raw_pin: u16, function: PinFunction) -> Option<PinmuxMode> {
-    match (raw_pin, function) {
+fn pinmux_mode_for(raw_pin: RawPin, function: PinFunction) -> Option<PinmuxMode> {
+    match (raw_pin.as_u16(), function) {
         (_, PinFunction::Gpio) => None,
         (0x0001, PinFunction::Dmic) => Some(PinmuxMode::Selector(0b00)), // PA0
         (0x0001, PinFunction::Pwm0N) => Some(PinmuxMode::Selector(0b01)), // PA0
@@ -698,9 +733,9 @@ fn pinmux_mode_for(raw_pin: u16, function: PinFunction) -> Option<PinmuxMode> {
     }
 }
 
-pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) -> Result<(), PinmuxError> {
+pub(crate) fn set_function_raw(raw_pin: RawPin, function: PinFunction) -> Result<(), PinmuxError> {
     let Some((port, bit, mask)) = decode_raw_pin_checked(raw_pin) else {
-        return Err(PinmuxError::InvalidRawPin(raw_pin));
+        return Err(PinmuxError::InvalidRawPin(raw_pin.as_u16()));
     };
     if matches!(function, PinFunction::Gpio) {
         modify_raw_port_reg(port, 0x06, mask, true);
@@ -722,11 +757,11 @@ pub(crate) fn set_function_raw(raw_pin: u16, function: PinFunction) -> Result<()
     Ok(())
 }
 
-pub fn set_function_for_raw_pin(raw_pin: u16, function: PinFunction) -> Result<(), PinmuxError> {
+pub fn set_function_for_raw_pin(raw_pin: RawPin, function: PinFunction) -> Result<(), PinmuxError> {
     set_function_raw(raw_pin, function)
 }
 
-pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
+pub(crate) fn set_input_enabled_raw(raw_pin: RawPin, enabled: bool) {
     let (port, _, mask) = decode_raw_pin(raw_pin);
     #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
     {
@@ -758,17 +793,17 @@ pub(crate) fn set_input_enabled_raw(raw_pin: u16, enabled: bool) {
     modify_raw_port_reg(port, 0x01, mask, enabled);
 }
 
-pub(crate) fn set_output_enabled_raw(raw_pin: u16, enabled: bool) {
+pub(crate) fn set_output_enabled_raw(raw_pin: RawPin, enabled: bool) {
     let (port, _, mask) = decode_raw_pin(raw_pin);
     modify_raw_port_reg(port, 0x02, mask, !enabled);
 }
 
-pub(crate) fn write_data_raw(raw_pin: u16, high: bool) {
+pub(crate) fn write_data_raw(raw_pin: RawPin, high: bool) {
     let (port, _, mask) = decode_raw_pin(raw_pin);
     modify_raw_port_reg(port, 0x03, mask, high);
 }
 
-pub(crate) fn set_pull_resistor_raw(raw_pin: u16, pull: analog::Pull) {
+pub(crate) fn set_pull_resistor_raw(raw_pin: RawPin, pull: analog::Pull) {
     let (port, bit, _) = decode_raw_pin(raw_pin);
     let Some((addr, shift)) = pull_addr_shift_raw(port, bit) else {
         return;
@@ -919,12 +954,12 @@ impl<const PORT: u8, const BIT: u8> EhInputPin for Pin<PORT, BIT, Input> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pinmux_mode_for, PinFunction, PinmuxMode};
+    use super::{pinmux_mode_for, PinFunction, PinmuxMode, RawPin};
 
     #[test]
     fn pb1_uart_selector_is_slot_01() {
         assert!(matches!(
-            pinmux_mode_for(0x0102, PinFunction::Uart),
+            pinmux_mode_for(RawPin::try_from_u16(0x0102).unwrap(), PinFunction::Uart),
             Some(PinmuxMode::Selector(0b01))
         ));
     }
@@ -932,11 +967,11 @@ mod tests {
     #[test]
     fn rf_alt_default_slot_cases_match_vendor() {
         assert!(matches!(
-            pinmux_mode_for(0x0280, PinFunction::TxCyc2Pa),
+            pinmux_mode_for(RawPin::try_from_u16(0x0280).unwrap(), PinFunction::TxCyc2Pa),
             Some(PinmuxMode::Selector(0b00))
         ));
         assert!(matches!(
-            pinmux_mode_for(0x0301, PinFunction::RxCyc2Lna),
+            pinmux_mode_for(RawPin::try_from_u16(0x0301).unwrap(), PinFunction::RxCyc2Lna),
             Some(PinmuxMode::Selector(0b00))
         ));
     }
@@ -944,13 +979,20 @@ mod tests {
     #[test]
     fn pa5_usb_is_fixed_no_mux() {
         assert!(matches!(
-            pinmux_mode_for(0x0020, PinFunction::Usb),
+            pinmux_mode_for(RawPin::try_from_u16(0x0020).unwrap(), PinFunction::Usb),
             Some(PinmuxMode::FixedNoMux)
         ));
     }
 
     #[test]
     fn unsupported_pair_is_rejected() {
-        assert!(pinmux_mode_for(0x0104, PinFunction::Pwm0).is_none());
+        assert!(pinmux_mode_for(RawPin::try_from_u16(0x0104).unwrap(), PinFunction::Pwm0).is_none());
+    }
+
+    #[test]
+    fn raw_pin_try_from_u16_validates_input() {
+        assert!(RawPin::try_from_u16(0x0104).is_ok());
+        assert!(RawPin::try_from_u16(0x0000).is_err());
+        assert!(RawPin::try_from_u16(0x0410).is_err());
     }
 }
