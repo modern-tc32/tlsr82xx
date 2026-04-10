@@ -1,0 +1,15 @@
+[package]
+name = "tlsr82xx-ble-ota-boot8258"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "tlsr82xx-ble-ota-boot8258"
+path = "src/main.rs"
+
+[features]
+default = []
+
+[dependencies]
