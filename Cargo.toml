@@ -10,13 +10,17 @@ members = [
   "examples/flash8258",
   "examples/i2c8258",
   "examples/ble_beacon8258",
+  "examples/ble_ota_rust8258",
   "examples/radio8258",
   "examples/radio_selftest8258",
   "examples/rgb8258",
+  "examples/pmled8258",
   "examples/spi8258",
   "examples/stimerirq8258",
   "examples/uart8258",
   "examples/uartloopback8258",
+  "examples/ble_ota_boot8258",
+  "examples/ota_app8258",
 ]
 resolver = "2"
 

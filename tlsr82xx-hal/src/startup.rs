@@ -1,5 +1,4 @@
-use crate::{analog, clock, interrupt, timer};
-use crate::mmio::{reg16, reg8, reg32};
+use crate::mmio::{reg16, reg32, reg8};
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
     ANA_32K_TICK_BYTE0, ANA_32K_TICK_BYTE1, ANA_32K_TICK_BYTE2, ANA_32K_TICK_BYTE3, ANA_REG_0X02,
@@ -9,9 +8,9 @@ use crate::regs8258::{
     REG_DMA_CHN_EN, REG_GPIO_PE_IE, REG_GPIO_WAKEUP_IRQ, REG_IRQ_MASK, REG_MCU_WAKEUP_MASK,
     REG_MSPI_CTRL, REG_MSPI_DATA, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG, REG_PWDN_CTRL,
     REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI, REG_SYSTEM_TICK,
-    REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA,
-    REG_WAKEUP_SRC,
+    REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
 };
+use crate::{analog, clock, interrupt, timer};
 
 unsafe extern "C" {
     static mut _dstored_: u32;
@@ -239,11 +238,7 @@ pub unsafe extern "C" fn __tc32_fill_stack_pattern(mut start: *mut u32, end: *mu
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn __tc32_copy_words(
-    mut dst: *mut u32,
-    end: *mut u32,
-    mut src: *const u32,
-) {
+pub unsafe extern "C" fn __tc32_copy_words(mut dst: *mut u32, end: *mut u32, mut src: *const u32) {
     while dst < end {
         core::ptr::write_volatile(dst, core::ptr::read_volatile(src));
         dst = dst.add(1);
@@ -495,7 +490,21 @@ pub extern "C" fn start_reboot() -> ! {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".ram_code.pm_wait_xtal_ready")]
 pub extern "C" fn pm_wait_xtal_ready() {
-    let loops = unsafe { g_pm_xtal_stable_loopnum };
+    let loops = unsafe {
+        // These PM tuning globals may live in retention/no-init memory in mixed
+        // SDK+Rust builds. On cold boot they can contain garbage and trap startup
+        // in this loop. Clamp to known-safe defaults.
+        if g_pm_xtal_stable_loopnum == 0 || g_pm_xtal_stable_loopnum > 200 {
+            g_pm_xtal_stable_loopnum = 10;
+        }
+        if g_pm_xtal_stable_suspend_nopnum == 0 || g_pm_xtal_stable_suspend_nopnum > 10_000 {
+            g_pm_xtal_stable_suspend_nopnum = 200;
+        }
+        if g_pm_suspend_delay_us == 0 || g_pm_suspend_delay_us > 10_000 {
+            g_pm_suspend_delay_us = 0x87;
+        }
+        g_pm_xtal_stable_loopnum
+    };
     let mut i = 0u32;
     loop {
         if i > loops {
@@ -717,7 +726,10 @@ pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) 
     if interval_us != 0 {
         unsafe {
             core::ptr::write_volatile(reg32(REG_TMR1_TICK), 0);
-            core::ptr::write_volatile(reg32(REG_TMR1_TICK - 12), interval_us.wrapping_mul(sysclktick));
+            core::ptr::write_volatile(
+                reg32(REG_TMR1_TICK - 12),
+                interval_us.wrapping_mul(sysclktick),
+            );
             let ctrl = reg8(REG_TMR1_TICK - 8);
             let mut value = core::ptr::read_volatile(ctrl.cast_const());
             value &= !0x30;
@@ -872,6 +884,70 @@ pub extern "C" fn cpu_wakeup_init() {
 }
 
 #[inline(always)]
+pub fn startup_state() -> StartupState {
+    match unsafe { core::ptr::read_volatile(&raw const pmParam.mcu_status) } {
+        MCU_STATUS_DEEPRET_BACK => StartupState::DeepRetention,
+        MCU_STATUS_DEEP_BACK => StartupState::Deep,
+        _ => StartupState::Boot,
+    }
+}
+
+#[inline(always)]
+pub fn wakeup_src_raw() -> u8 {
+    unsafe { core::ptr::read_volatile(&raw const pmParam.wakeup_src) }
+}
+
+#[inline(always)]
+pub fn is_pad_wakeup() -> bool {
+    unsafe { core::ptr::read_volatile(&raw const pmParam.is_pad_wakeup) != 0 }
+}
+
+#[inline(always)]
+pub fn set_pm_tim_recover_handler(handler: usize) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut pm_tim_recover, handler);
+    }
+}
+
+#[inline(always)]
+pub fn set_cpu_sleep_wakeup_handler(handler: usize) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut cpu_sleep_wakeup, handler);
+    }
+}
+
+#[inline(always)]
+pub fn set_tick_cur(value: u32) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut tick_cur, value);
+    }
+}
+
+#[inline(always)]
+pub fn current_tick_cur() -> u32 {
+    unsafe { core::ptr::read_volatile(&raw const tick_cur) }
+}
+
+#[inline(always)]
+pub fn set_tick_32k_cur(value: u32) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut tick_32k_cur, value);
+    }
+}
+
+#[inline(always)]
+pub fn current_tick_32k_cur() -> u32 {
+    unsafe { core::ptr::read_volatile(&raw const tick_32k_cur) }
+}
+
+#[inline(always)]
+pub fn set_pm_long_suspend(value: bool) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut pm_long_suspend, value as u8);
+    }
+}
+
+#[inline(always)]
 pub fn init() -> StartupState {
     interrupt::disable();
     interrupt::clear_mask(interrupt::ALL_IRQS);
@@ -883,5 +959,5 @@ pub fn init() -> StartupState {
         sysTimerPerUs = timer::SYS_TICK_PER_US;
     }
 
-    StartupState::Boot
+    startup_state()
 }

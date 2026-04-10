@@ -27,18 +27,20 @@ pub mod gpio;
 pub mod i2c;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod interrupt;
+#[cfg(any(feature = "chip-8258", feature = "chip-8278", feature = "chip-826x"))]
+pub mod pm;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod pwm;
 #[cfg(feature = "chip-8258")]
 pub mod radio;
-#[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
-pub mod startup;
 #[cfg(feature = "chip-8258")]
 pub mod spi;
+#[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+pub mod startup;
 pub mod timer;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod uart;
 
+mod mmio;
 #[cfg(feature = "chip-8258")]
 mod regs8258;
-mod mmio;
