@@ -9,10 +9,6 @@ build = "build.rs"
 name = "tlsr82xx-stimerirq8258"
 path = "src/main.rs"
 
-[features]
-default = ["system-timer-irq-shim"]
-system-timer-irq-shim = ["tlsr82xx-hal/irq-system-timer-shim"]
-
 [dependencies]
 embedded-hal = "1"
 tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }

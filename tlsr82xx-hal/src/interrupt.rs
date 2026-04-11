@@ -6,13 +6,16 @@ use crate::regs8258::{
     FLD_TMR_STA_TMR2, REG_IRQ_EN, REG_IRQ_MASK, REG_IRQ_SRC, REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS,
     REG_TMR_STA,
 };
-
 pub const ALL_IRQS: u32 = 0xffff_ffff;
 
 pub type IrqHandler = unsafe extern "C" fn(u32);
+#[cfg(feature = "chip-8258")]
+pub type RfIrqHandler = unsafe extern "C" fn(u16);
 
 static mut IRQ_HANDLERS: [Option<IrqHandler>; 32] = [None; 32];
 static mut GLOBAL_IRQ_HANDLER: Option<unsafe extern "C" fn()> = None;
+#[cfg(feature = "chip-8258")]
+static mut RF_IRQ_HANDLERS: [Option<RfIrqHandler>; 16] = [None; 16];
 
 #[cfg(feature = "chip-8258")]
 #[derive(Clone, Copy, Debug, Default)]
@@ -76,9 +79,52 @@ impl Irq {
     pub const fn mask(self) -> u32 {
         1u32 << (self as u32)
     }
+
+    #[inline(always)]
+    pub const fn from_bit(bit: u8) -> Option<Self> {
+        match bit {
+            0 => Some(Self::Timer0),
+            1 => Some(Self::Timer1),
+            2 => Some(Self::Timer2),
+            3 => Some(Self::UsbPwrdn),
+            4 => Some(Self::Dma),
+            5 => Some(Self::DmaFifo),
+            6 => Some(Self::Uart),
+            7 => Some(Self::MixCmd),
+            8 => Some(Self::Ep0Setup),
+            9 => Some(Self::Ep0Data),
+            10 => Some(Self::Ep0Status),
+            11 => Some(Self::SetInterface),
+            12 => Some(Self::EndpointData),
+            13 => Some(Self::ZigbeeRadio),
+            14 => Some(Self::SoftwarePwm),
+            16 => Some(Self::Usb250us),
+            17 => Some(Self::UsbReset),
+            18 => Some(Self::Gpio),
+            19 => Some(Self::PowerManagement),
+            20 => Some(Self::SystemTimer),
+            21 => Some(Self::GpioRisc0),
+            22 => Some(Self::GpioRisc1),
+            _ => None,
+        }
+    }
 }
 
-#[cfg(not(feature = "custom-irq-handler"))]
+#[cfg(all(feature = "chip-8258", not(feature = "custom-irq-handler")))]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".ram_code")]
+pub extern "C" fn irq_handler_rust() {
+    let global = unsafe { GLOBAL_IRQ_HANDLER };
+    if let Some(handler) = global {
+        unsafe {
+            handler();
+        }
+        return;
+    }
+    dispatch_pending_8258(snapshot_pending_8258());
+}
+
+#[cfg(all(not(feature = "chip-8258"), not(feature = "custom-irq-handler")))]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".ram_code")]
 pub extern "C" fn irq_handler() {
@@ -190,6 +236,13 @@ pub fn clear_handlers() {
         for index in 0..32 {
             core::ptr::write(base.add(index), None);
         }
+        #[cfg(feature = "chip-8258")]
+        {
+            let rf_base = core::ptr::addr_of_mut!(RF_IRQ_HANDLERS).cast::<Option<RfIrqHandler>>();
+            for index in 0..16 {
+                core::ptr::write(rf_base.add(index), None);
+            }
+        }
     }
     restore(irq_enabled);
 }
@@ -220,6 +273,68 @@ pub fn dispatch_pending(mut pending: u32) {
             unsafe {
                 handler(1u32 << bit);
             }
+        }
+    }
+}
+
+#[cfg(feature = "chip-8258")]
+#[unsafe(link_section = ".ram_code")]
+pub fn dispatch_pending_8258(pending: Pending8258) {
+    let mut core_pending = pending.core;
+    while core_pending != 0 {
+        let bit = core_pending.trailing_zeros() as u8;
+        core_pending &= !(1u32 << u32::from(bit));
+
+        let Some(irq) = Irq::from_bit(bit) else {
+            clear_irq_source(1u32 << u32::from(bit));
+            continue;
+        };
+
+        match irq {
+            Irq::Timer0 => {
+                dispatch_one(bit);
+            }
+            Irq::SystemTimer => {
+                dispatch_one(bit);
+            }
+            Irq::ZigbeeRadio => {
+                let rf_pending = masked_rf_irq_source();
+                dispatch_rf_pending(rf_pending);
+                acknowledge_irq(Irq::ZigbeeRadio);
+                dispatch_one(bit);
+            }
+            _ => {
+                acknowledge_irq(irq);
+                dispatch_one(bit);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "chip-8258")]
+#[unsafe(link_section = ".ram_code")]
+fn dispatch_rf_pending(mut pending: u16) {
+    while pending != 0 {
+        let bit = pending.trailing_zeros() as usize;
+        let mask = 1u16 << bit;
+        pending &= !mask;
+        let handler = unsafe { RF_IRQ_HANDLERS[bit] };
+        if let Some(handler) = handler {
+            unsafe {
+                handler(mask);
+            }
+        }
+        acknowledge_rf_irq(mask);
+    }
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
+fn dispatch_one(bit: u8) {
+    let handler = unsafe { IRQ_HANDLERS[bit as usize] };
+    if let Some(handler) = handler {
+        unsafe {
+            handler(1u32 << u32::from(bit));
         }
     }
 }
@@ -335,6 +450,40 @@ pub fn rf_clear_irq_source(mask: u16) {
 #[inline(always)]
 pub fn acknowledge_rf_irq(mask: u16) {
     rf_clear_irq_source(mask);
+}
+
+#[cfg(feature = "chip-8258")]
+pub fn register_rf_irq_handler(mask: u16, handler: RfIrqHandler) {
+    let irq_enabled = disable();
+    unsafe {
+        let base = core::ptr::addr_of_mut!(RF_IRQ_HANDLERS).cast::<Option<RfIrqHandler>>();
+        let mut pending = mask;
+        while pending != 0 {
+            let bit = pending.trailing_zeros() as usize;
+            pending &= !(1u16 << bit);
+            if bit < 16 {
+                core::ptr::write(base.add(bit), Some(handler));
+            }
+        }
+    }
+    restore(irq_enabled);
+}
+
+#[cfg(feature = "chip-8258")]
+pub fn unregister_rf_irq_handler(mask: u16) {
+    let irq_enabled = disable();
+    unsafe {
+        let base = core::ptr::addr_of_mut!(RF_IRQ_HANDLERS).cast::<Option<RfIrqHandler>>();
+        let mut pending = mask;
+        while pending != 0 {
+            let bit = pending.trailing_zeros() as usize;
+            pending &= !(1u16 << bit);
+            if bit < 16 {
+                core::ptr::write(base.add(bit), None);
+            }
+        }
+    }
+    restore(irq_enabled);
 }
 
 #[cfg(feature = "chip-8258")]

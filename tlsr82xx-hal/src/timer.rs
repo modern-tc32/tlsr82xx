@@ -69,7 +69,16 @@ pub fn clock_time_exceed_us(reference: u32, microseconds: u32) -> bool {
 #[inline(always)]
 pub fn set_system_timer_irq_capture(tick: u32) {
     unsafe {
-        core::ptr::write_volatile(reg32(REG_SYSTEM_TICK_IRQ), tick & !0x07);
+        let now = core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const());
+        let safe_min = now.wrapping_add(12 * SYS_TICK_PER_US);
+        let requested = tick & !0x07;
+        let delta = tick.wrapping_sub(now.wrapping_add(7 * SYS_TICK_PER_US));
+        let value = if delta > (1u32 << 30) {
+            safe_min & !0x07
+        } else {
+            requested
+        };
+        core::ptr::write_volatile(reg32(REG_SYSTEM_TICK_IRQ), value);
     }
 }
 
@@ -183,6 +192,7 @@ pub fn configure_system_timer_periodic_irq(period_ticks: u32) {
         core::ptr::write_volatile(&raw mut TLSR82XX_SYSTEM_TIMER_IRQ_PERIOD_TICKS, period_ticks);
     }
     clear_system_timer_irq_status();
+    start_system_timer();
     set_system_timer_irq_capture(first_compare);
     enable_system_timer_irq();
 }
@@ -205,13 +215,31 @@ pub fn system_timer_periodic_irq_fired() {
 #[cfg(feature = "chip-8258")]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".ram_code")]
-pub extern "C" fn tlsr82xx_system_timer_irq_tick() {
+pub extern "C" fn tlsr82xx_system_timer_irq_service() {
+    let capture = system_timer_irq_capture();
+    let now = system_timer_value();
+    clear_system_timer_irq_status();
+    let compare_fired = now.wrapping_sub(capture) < (1 << 30);
+    if !compare_fired {
+        return;
+    }
+    if system_timer_periodic_irq_enabled() {
+        let period = unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_PERIODIC_IRQ_TICKS) };
+        let next = now.wrapping_add(period);
+        set_system_timer_irq_capture(next & !0x07);
+    }
     system_timer_periodic_irq_fired();
     unsafe {
         if let Some(callback) = SYSTEM_TIMER_IRQ_CALLBACK {
             callback();
         }
     }
+}
+
+#[cfg(feature = "chip-8258")]
+#[unsafe(link_section = ".ram_code")]
+pub fn service_system_timer_irq() {
+    tlsr82xx_system_timer_irq_service();
 }
 
 #[cfg(feature = "chip-8258")]

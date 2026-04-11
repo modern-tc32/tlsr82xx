@@ -2,7 +2,7 @@ use crate::analog;
 use crate::mmio::reg8;
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{AREG_FLASH_VOLTAGE, REG_CLK_SEL};
-use crate::startup::tl_24mrc_cal;
+use crate::startup::{self, StartupState, tl_24mrc_cal};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +55,10 @@ pub extern "C" fn clock_init(sys_clk: u8) {
 
     if sys_clk == SysClock::Crystal48M as u8 {
         analog::write(AREG_FLASH_VOLTAGE, 0xc6);
+    }
+
+    if startup::startup_state() != StartupState::DeepRetention {
+        rc_24m_cal();
     }
 }
 

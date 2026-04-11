@@ -812,13 +812,19 @@ pub extern "C" fn cpu_wakeup_init() {
         core::ptr::write_volatile(crate::mmio::reg16(REG_DCDC_CTRL), 0);
     }
 
-    if unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) } == 1 {
+    let wakeup_flag = unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) };
+    if wakeup_flag == 1 {
         analog::write(0x01, 0x3c);
     } else {
         analog::write(0x01, 0x4c);
     }
 
-    let need_read_wakeup_src = if (analog::read(0x7f) & 0x01) != 0 {
+    let need_read_wakeup_src = if wakeup_flag == 2 {
+        unsafe {
+            pmParam.mcu_status = MCU_STATUS_BOOT;
+        }
+        false
+    } else if (analog::read(0x7f) & 0x01) != 0 {
         unsafe {
             pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
         }
@@ -868,6 +874,8 @@ pub extern "C" fn cpu_wakeup_init() {
         pm_wait_xtal_ready();
     } else {
         unsafe {
+            core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), 0);
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x12);
             core::ptr::write_volatile(reg8(REG_PM_WAIT), 0x01);
         }
         pm_wait_xtal_ready();
@@ -955,6 +963,14 @@ pub fn init() -> StartupState {
 
     cpu_wakeup_init();
     clock::init(clock::SysClock::Crystal48M);
+    if startup_state() == StartupState::Boot {
+        unsafe {
+            core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), 0);
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x00);
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x12);
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK_CTRL), 0x01);
+        }
+    }
     unsafe {
         sysTimerPerUs = timer::SYS_TICK_PER_US;
     }

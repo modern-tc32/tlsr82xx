@@ -1,4 +1,3 @@
-pub fn init() -> i32 {
-    let _ = tlsr82xx_hal::startup::init();
-    0
+pub fn init() -> tlsr82xx_hal::startup::StartupState {
+    tlsr82xx_hal::startup::init()
 }

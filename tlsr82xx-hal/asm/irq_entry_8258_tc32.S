@@ -8,7 +8,7 @@
 __irq:
     tpush {r14}
     tpush {r0-r7}
-    .short 0x6bd8
+    tmrss r0
 
     tmov r1, r8
     tmov r2, r9
@@ -26,6 +26,6 @@ __irq:
     tmov r11, r4
     tmov r12, r5
 
-    .short 0x6bd0
+    tmssr r0
     tpop {r0-r7}
-    .short 0x6900
+    treti {r15}
