@@ -5,54 +5,54 @@ use core::panic::PanicInfo;
 
 use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::interrupt::{self, Irq};
+use tlsr82xx_hal::interrupt;
 use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
 
 mod platform;
 
-const IRQ_PERIOD_US: u32 = 1_000_000;
-const TIMER0_PERIOD_TICKS: u32 = IRQ_PERIOD_US * timer::SYS_TICK_PER_US;
-const MAIN_POLL_US: u32 = 80_000;
+const IRQ_PERIOD_US: u32 = 200_000;
+const IRQ_PERIOD_TICKS: u32 = IRQ_PERIOD_US * timer::SYS_TICK_PER_US;
 
-static mut MAIN_LAST_PHASE: u8 = 0;
+#[repr(C)]
+pub struct SystemTimerTrace {
+    boot_tick: u32,
+    irq_count: u32,
+    led_phase: u32,
+}
+
+#[unsafe(no_mangle)]
+pub static mut TLSR82XX_SYSTIMER_TRACE: SystemTimerTrace = SystemTimerTrace {
+    boot_tick: 0,
+    irq_count: 0,
+    led_phase: 0,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     let _ = platform::init();
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
+    unsafe {
+        core::ptr::write_volatile(&raw mut TLSR82XX_SYSTIMER_TRACE.boot_tick, timer::clock_time());
+    }
 
-    interrupt::clear_irq(Irq::Timer0);
-    timer::configure_timer0_periodic_irq(TIMER0_PERIOD_TICKS);
-    interrupt::enable_irq(Irq::Timer0);
+    timer::configure_system_timer_periodic_irq(IRQ_PERIOD_TICKS);
     interrupt::enable();
 
     let _ = board.led_y.set_state(PinState::from(false));
-    let _ = board.led_w.set_state(PinState::from(true));
-    let mut next_poll = timer::clock_time();
+    let mut last_phase = false;
     loop {
-        if !timer::clock_time_exceed_us(next_poll, MAIN_POLL_US) {
-            core::hint::spin_loop();
-            continue;
+        let count = timer::system_timer_irq_count();
+        let phase = timer::system_timer_irq_phase();
+        unsafe {
+            core::ptr::write_volatile(&raw mut TLSR82XX_SYSTIMER_TRACE.irq_count, count);
+            core::ptr::write_volatile(&raw mut TLSR82XX_SYSTIMER_TRACE.led_phase, phase as u32);
         }
-        next_poll = timer::clock_time();
-        let phase = timer::timer0_irq_phase();
-        if phase as u8 != read_main_last_phase() {
-            write_main_last_phase(phase as u8);
-            let _ = board.led_y.set_state(PinState::from(phase));
-            let _ = board.led_w.set_state(PinState::from(!phase));
+        if phase != last_phase {
+            last_phase = phase;
+            let _ = board.led_w.set_state(PinState::from(phase));
         }
         core::hint::spin_loop();
-    }
-}
-
-fn read_main_last_phase() -> u8 {
-    unsafe { core::ptr::read_volatile(&raw const MAIN_LAST_PHASE) }
-}
-
-fn write_main_last_phase(value: u8) {
-    unsafe {
-        core::ptr::write_volatile(&raw mut MAIN_LAST_PHASE, value);
     }
 }
 

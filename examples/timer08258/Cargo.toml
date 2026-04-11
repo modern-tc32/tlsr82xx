@@ -1,17 +1,17 @@
 [package]
-name = "tlsr82xx-stimerirq8258"
+name = "tlsr82xx-timer08258"
 version = "0.1.0"
 edition = "2021"
 publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-stimerirq8258"
+name = "tlsr82xx-timer08258"
 path = "src/main.rs"
 
 [features]
-default = ["system-timer-irq-shim"]
-system-timer-irq-shim = ["tlsr82xx-hal/irq-system-timer-shim"]
+default = ["timer0-irq-shim"]
+timer0-irq-shim = ["tlsr82xx-hal/irq-timer0-shim"]
 
 [dependencies]
 embedded-hal = "1"

@@ -17,6 +17,7 @@ members = [
   "examples/pmled8258",
   "examples/spi8258",
   "examples/stimerirq8258",
+  "examples/timer08258",
   "examples/uart8258",
   "examples/uartloopback8258",
   "examples/ble_ota_boot8258",

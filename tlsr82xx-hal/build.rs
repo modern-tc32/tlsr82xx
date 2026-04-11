@@ -49,6 +49,12 @@ fn main() {
         objects.push(compile_asm(&clang, &asm_flags, &timer0_shim, &object_dir));
     }
 
+    if env::var_os("CARGO_FEATURE_IRQ_SYSTEM_TIMER_SHIM").is_some() {
+        let system_timer_shim = manifest_dir.join("asm/irq_system_timer_shim_8258_tc32.S");
+        println!("cargo:rerun-if-changed={}", system_timer_shim.display());
+        objects.push(compile_asm(&clang, &asm_flags, &system_timer_shim, &object_dir));
+    }
+
     let lib_name = "tlsr82xx_hal_irq_asm_8258";
     let archive = out_dir.join(format!("lib{lib_name}.a"));
 
