@@ -10,6 +10,4 @@ name = "tlsr82xx-timer08258"
 path = "src/main.rs"
 
 [dependencies]
-embedded-hal = "1"
 tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }
-tlsr82xx-boards = { path = "../../tlsr82xx-boards", features = ["chip-8258"] }

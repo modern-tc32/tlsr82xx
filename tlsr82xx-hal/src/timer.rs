@@ -68,6 +68,18 @@ pub fn clock_time_exceed_us(reference: u32, microseconds: u32) -> bool {
 
 #[cfg(feature = "chip-8258")]
 #[inline(always)]
+pub fn timer0_sysclk_ticks_per_us() -> u32 {
+    crate::clock::current_mhz() as u32
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
+pub fn timer0_sysclk_ticks_from_us(microseconds: u32) -> u32 {
+    microseconds.wrapping_mul(timer0_sysclk_ticks_per_us())
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
 pub fn set_system_timer_irq_capture(tick: u32) {
     unsafe {
         core::ptr::write_volatile(reg32(REG_SYSTEM_TICK_IRQ), tick & !0x07);
@@ -396,9 +408,10 @@ pub fn timer0_irq_phase() -> bool {
 }
 
 #[cfg(feature = "chip-8258")]
-pub fn register_timer0_irq_callback(callback: unsafe extern "C" fn()) {
+pub fn register_timer0_irq_callback(callback: crate::interrupt::RamVoidHandler) {
+    crate::interrupt::assert_ram_code_addr(callback.get() as usize, "timer0 irq callback");
     unsafe {
-        core::ptr::write_volatile(&raw mut TIMER0_IRQ_CALLBACK, Some(callback));
+        core::ptr::write_volatile(&raw mut TIMER0_IRQ_CALLBACK, Some(callback.get()));
     }
 }
 

@@ -3,56 +3,75 @@
 
 use core::panic::PanicInfo;
 
-use embedded_hal::digital::{OutputPin, PinState};
-use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::interrupt::{self, Irq};
-use tlsr82xx_hal::pac;
 use tlsr82xx_hal::timer;
 
 mod platform;
 
-const IRQ_PERIOD_US: u32 = 1_000_000;
-const TIMER0_PERIOD_TICKS: u32 = IRQ_PERIOD_US * timer::SYS_TICK_PER_US;
-const MAIN_POLL_US: u32 = 80_000;
+const IRQ_PERIOD_US: u32 = 200_000;
+const GPIO_PB_OUT: *mut u8 = 0x80058b as *mut u8;
+const GPIO_PB_OEN: *mut u8 = 0x80058a as *mut u8;
+const GPIO_PB_GPIO: *mut u8 = 0x80058e as *mut u8;
+const ANA_GPIO_DS: u8 = 0xbf;
+const PB4_MASK: u8 = 1 << 4;
+const PB5_MASK: u8 = 1 << 5;
 
-static mut MAIN_LAST_PHASE: u8 = 0;
+static mut LED_STATE: u8 = 0;
+
+tlsr82xx_hal::define_ram_void_handler! {
+    unsafe extern "C" fn timer0_led_irq() {
+        let next = (core::ptr::read_volatile(&raw const LED_STATE) & 1) ^ 1;
+        core::ptr::write_volatile(&raw mut LED_STATE, next);
+
+        let out = core::ptr::read_volatile(GPIO_PB_OUT.cast_const());
+        let next_out = if next != 0 {
+            (out | PB5_MASK) & !PB4_MASK
+        } else {
+            (out | PB4_MASK) & !PB5_MASK
+        };
+        core::ptr::write_volatile(GPIO_PB_OUT, next_out);
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
     let _ = platform::init();
-    let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
+    unsafe {
+        core::ptr::write_volatile(&raw mut LED_STATE, 1);
+    }
+    init_led_gpio_raw();
+    set_white_raw();
 
     interrupt::clear_irq(Irq::Timer0);
-    timer::configure_timer0_periodic_irq(TIMER0_PERIOD_TICKS);
+    timer::configure_timer0_periodic_irq(timer::timer0_sysclk_ticks_from_us(IRQ_PERIOD_US));
+    timer::register_timer0_irq_callback(tlsr82xx_hal::ram_void_handler!(timer0_led_irq));
     interrupt::enable_irq(Irq::Timer0);
     interrupt::enable();
 
-    let _ = board.led_y.set_state(PinState::from(false));
-    let _ = board.led_w.set_state(PinState::from(true));
-    let mut next_poll = timer::clock_time();
     loop {
-        if !timer::clock_time_exceed_us(next_poll, MAIN_POLL_US) {
-            core::hint::spin_loop();
-            continue;
-        }
-        next_poll = timer::clock_time();
-        let phase = timer::timer0_irq_phase();
-        if phase as u8 != read_main_last_phase() {
-            write_main_last_phase(phase as u8);
-            let _ = board.led_y.set_state(PinState::from(phase));
-            let _ = board.led_w.set_state(PinState::from(!phase));
-        }
         core::hint::spin_loop();
     }
 }
 
-fn read_main_last_phase() -> u8 {
-    unsafe { core::ptr::read_volatile(&raw const MAIN_LAST_PHASE) }
+fn init_led_gpio_raw() {
+    unsafe {
+        let ds = tlsr82xx_hal::analog::read(ANA_GPIO_DS) | (PB4_MASK | PB5_MASK);
+        tlsr82xx_hal::analog::write(ANA_GPIO_DS, ds);
+        core::ptr::write_volatile(
+            GPIO_PB_GPIO,
+            core::ptr::read_volatile(GPIO_PB_GPIO.cast_const()) | (PB4_MASK | PB5_MASK),
+        );
+        core::ptr::write_volatile(
+            GPIO_PB_OEN,
+            core::ptr::read_volatile(GPIO_PB_OEN.cast_const()) & !(PB4_MASK | PB5_MASK),
+        );
+    }
 }
 
-fn write_main_last_phase(value: u8) {
+fn set_white_raw() {
     unsafe {
-        core::ptr::write_volatile(&raw mut MAIN_LAST_PHASE, value);
+        let out = core::ptr::read_volatile(GPIO_PB_OUT.cast_const());
+        core::ptr::write_volatile(GPIO_PB_OUT, (out | PB5_MASK) & !PB4_MASK);
     }
 }
 
