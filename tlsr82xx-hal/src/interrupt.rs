@@ -11,6 +11,74 @@ pub const ALL_IRQS: u32 = 0xffff_ffff;
 pub type IrqHandler = unsafe extern "C" fn(u32);
 #[cfg(feature = "chip-8258")]
 pub type RfIrqHandler = unsafe extern "C" fn(u16);
+pub type VoidHandler = unsafe extern "C" fn();
+
+unsafe extern "C" {
+    static __ram_code_start: u8;
+    static __ram_code_end: u8;
+}
+
+#[derive(Clone, Copy)]
+pub struct RamIrqHandler(IrqHandler);
+
+#[derive(Clone, Copy)]
+pub struct RamGlobalIrqHandler(VoidHandler);
+
+#[cfg(feature = "chip-8258")]
+#[derive(Clone, Copy)]
+pub struct RamRfIrqHandler(RfIrqHandler);
+
+#[derive(Clone, Copy)]
+pub struct RamVoidHandler(VoidHandler);
+
+impl RamIrqHandler {
+    #[doc(hidden)]
+    pub const unsafe fn __new(handler: IrqHandler) -> Self {
+        Self(handler)
+    }
+
+    #[inline(always)]
+    const fn get(self) -> IrqHandler {
+        self.0
+    }
+}
+
+impl RamGlobalIrqHandler {
+    #[doc(hidden)]
+    pub const unsafe fn __new(handler: VoidHandler) -> Self {
+        Self(handler)
+    }
+
+    #[inline(always)]
+    const fn get(self) -> VoidHandler {
+        self.0
+    }
+}
+
+#[cfg(feature = "chip-8258")]
+impl RamRfIrqHandler {
+    #[doc(hidden)]
+    pub const unsafe fn __new(handler: RfIrqHandler) -> Self {
+        Self(handler)
+    }
+
+    #[inline(always)]
+    const fn get(self) -> RfIrqHandler {
+        self.0
+    }
+}
+
+impl RamVoidHandler {
+    #[doc(hidden)]
+    pub const unsafe fn __new(handler: VoidHandler) -> Self {
+        Self(handler)
+    }
+
+    #[inline(always)]
+    pub(crate) const fn get(self) -> VoidHandler {
+        self.0
+    }
+}
 
 static mut IRQ_HANDLERS: [Option<IrqHandler>; 32] = [None; 32];
 static mut GLOBAL_IRQ_HANDLER: Option<unsafe extern "C" fn()> = None;
@@ -202,7 +270,7 @@ pub fn is_pending(irq: Irq) -> bool {
 }
 
 #[inline(always)]
-pub fn register_irq_handler(irq: Irq, handler: IrqHandler) {
+pub fn register_irq_handler(irq: Irq, handler: RamIrqHandler) {
     register_handler(irq.bit(), handler);
 }
 
@@ -211,11 +279,12 @@ pub fn unregister_irq_handler(irq: Irq) {
     unregister_handler(irq.bit());
 }
 
-pub fn register_handler(bit: u8, handler: IrqHandler) {
+pub fn register_handler(bit: u8, handler: RamIrqHandler) {
     debug_assert!(bit < 32);
     let irq_enabled = disable();
+    assert_ram_code_addr(handler.get() as usize, "irq handler");
     unsafe {
-        IRQ_HANDLERS[bit as usize] = Some(handler);
+        IRQ_HANDLERS[bit as usize] = Some(handler.get());
     }
     restore(irq_enabled);
 }
@@ -247,10 +316,11 @@ pub fn clear_handlers() {
     restore(irq_enabled);
 }
 
-pub fn register_global_irq_handler(handler: unsafe extern "C" fn()) {
+pub fn register_global_irq_handler(handler: RamGlobalIrqHandler) {
     let irq_enabled = disable();
+    assert_ram_code_addr(handler.get() as usize, "global irq handler");
     unsafe {
-        GLOBAL_IRQ_HANDLER = Some(handler);
+        GLOBAL_IRQ_HANDLER = Some(handler.get());
     }
     restore(irq_enabled);
 }
@@ -453,8 +523,9 @@ pub fn acknowledge_rf_irq(mask: u16) {
 }
 
 #[cfg(feature = "chip-8258")]
-pub fn register_rf_irq_handler(mask: u16, handler: RfIrqHandler) {
+pub fn register_rf_irq_handler(mask: u16, handler: RamRfIrqHandler) {
     let irq_enabled = disable();
+    assert_ram_code_addr(handler.get() as usize, "rf irq handler");
     unsafe {
         let base = core::ptr::addr_of_mut!(RF_IRQ_HANDLERS).cast::<Option<RfIrqHandler>>();
         let mut pending = mask;
@@ -462,7 +533,7 @@ pub fn register_rf_irq_handler(mask: u16, handler: RfIrqHandler) {
             let bit = pending.trailing_zeros() as usize;
             pending &= !(1u16 << bit);
             if bit < 16 {
-                core::ptr::write(base.add(bit), Some(handler));
+                core::ptr::write(base.add(bit), Some(handler.get()));
             }
         }
     }
@@ -493,4 +564,13 @@ pub fn snapshot_pending_8258() -> Pending8258 {
         core: masked_irq_source(),
         rf: masked_rf_irq_source(),
     }
+}
+
+pub(crate) fn assert_ram_code_addr(addr: usize, kind: &str) {
+    let start = core::ptr::addr_of!(__ram_code_start) as usize;
+    let end = core::ptr::addr_of!(__ram_code_end) as usize;
+    assert!(
+        addr >= start && addr < end,
+        "{kind} 0x{addr:08x} not in .ram_code [0x{start:08x}, 0x{end:08x})"
+    );
 }

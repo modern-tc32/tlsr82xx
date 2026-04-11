@@ -59,6 +59,10 @@ irq_handler:
     tjex lr
 
 .Lsystem_timer_fast:
+    tloadr r0, .Lirq_src
+    tloadr r1, .Lsystem_timer_bit
+    tstorer r1, [r0]
+
     tpush {r14}
     tjl tlsr82xx_system_timer_irq_service
     tpop {r0}

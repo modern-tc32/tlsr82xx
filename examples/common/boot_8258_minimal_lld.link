@@ -21,8 +21,10 @@ SECTIONS
     . = (. * (1 - __BOOT_LOADER_IMAGE)) + (__FW_RAMCODE_SIZE_MAX * __BOOT_LOADER_IMAGE);
     .ram_code :
     {
+        PROVIDE(__ram_code_start = .);
         *(.ram_code)
         *(.ram_code.*)
+        PROVIDE(__ram_code_end = .);
     } :flash
 
     . = ALIGN(16);

@@ -41,3 +41,69 @@ pub mod uart;
 mod mmio;
 #[cfg(feature = "chip-8258")]
 mod regs8258;
+
+#[macro_export]
+macro_rules! ram_irq_handler {
+    ($handler:path) => {{
+        unsafe { $crate::interrupt::RamIrqHandler::__new($handler) }
+    }};
+}
+
+#[macro_export]
+macro_rules! define_ram_irq_handler {
+    ($(#[$meta:meta])* $vis:vis unsafe extern "C" fn $name:ident ($arg:ident : u32) $body:block) => {
+        $(#[$meta])*
+        #[unsafe(link_section = ".ram_code")]
+        $vis unsafe extern "C" fn $name($arg: u32) $body
+    };
+}
+
+#[macro_export]
+macro_rules! ram_global_irq_handler {
+    ($handler:path) => {{
+        unsafe { $crate::interrupt::RamGlobalIrqHandler::__new($handler) }
+    }};
+}
+
+#[macro_export]
+macro_rules! define_ram_global_irq_handler {
+    ($(#[$meta:meta])* $vis:vis unsafe extern "C" fn $name:ident () $body:block) => {
+        $(#[$meta])*
+        #[unsafe(link_section = ".ram_code")]
+        $vis unsafe extern "C" fn $name() $body
+    };
+}
+
+#[macro_export]
+macro_rules! ram_void_handler {
+    ($handler:path) => {{
+        unsafe { $crate::interrupt::RamVoidHandler::__new($handler) }
+    }};
+}
+
+#[macro_export]
+macro_rules! define_ram_void_handler {
+    ($(#[$meta:meta])* $vis:vis unsafe extern "C" fn $name:ident () $body:block) => {
+        $(#[$meta])*
+        #[unsafe(link_section = ".ram_code")]
+        $vis unsafe extern "C" fn $name() $body
+    };
+}
+
+#[cfg(feature = "chip-8258")]
+#[macro_export]
+macro_rules! ram_rf_irq_handler {
+    ($handler:path) => {{
+        unsafe { $crate::interrupt::RamRfIrqHandler::__new($handler) }
+    }};
+}
+
+#[cfg(feature = "chip-8258")]
+#[macro_export]
+macro_rules! define_ram_rf_irq_handler {
+    ($(#[$meta:meta])* $vis:vis unsafe extern "C" fn $name:ident ($arg:ident : u16) $body:block) => {
+        $(#[$meta])*
+        #[unsafe(link_section = ".ram_code")]
+        $vis unsafe extern "C" fn $name($arg: u16) $body
+    };
+}

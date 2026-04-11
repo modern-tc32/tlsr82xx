@@ -39,12 +39,20 @@ fn main() {
     ];
 
     let mut objects = Vec::new();
-    let irq_entry = manifest_dir.join("asm/irq_entry_8258_tc32.S");
-    println!("cargo:rerun-if-changed={}", irq_entry.display());
-    objects.push(compile_asm(&clang, &asm_flags, &irq_entry, &object_dir));
-    let irq_handler = manifest_dir.join("asm/irq_handler_8258_tc32.S");
-    println!("cargo:rerun-if-changed={}", irq_handler.display());
-    objects.push(compile_asm(&clang, &asm_flags, &irq_handler, &object_dir));
+    if env::var_os("CARGO_FEATURE_CUSTOM_IRQ_ENTRY").is_none() {
+        let irq_entry = manifest_dir.join("asm/irq_entry_8258_tc32.S");
+        println!("cargo:rerun-if-changed={}", irq_entry.display());
+        objects.push(compile_asm(&clang, &asm_flags, &irq_entry, &object_dir));
+    }
+    if env::var_os("CARGO_FEATURE_CUSTOM_IRQ_HANDLER").is_none() {
+        let irq_handler = manifest_dir.join("asm/irq_handler_8258_tc32.S");
+        println!("cargo:rerun-if-changed={}", irq_handler.display());
+        objects.push(compile_asm(&clang, &asm_flags, &irq_handler, &object_dir));
+    }
+
+    if objects.is_empty() {
+        return;
+    }
 
     let lib_name = "tlsr82xx_hal_irq_asm_8258";
     let archive = out_dir.join(format!("lib{lib_name}.a"));

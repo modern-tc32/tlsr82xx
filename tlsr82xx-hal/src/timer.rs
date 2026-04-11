@@ -21,7 +21,6 @@ const FLD_SYSTEM_IRQ_MASK: u8 = 1 << 1;
 const FLD_SYSTEM_TICK_START: u8 = 1 << 0;
 #[cfg(feature = "chip-8258")]
 const FLD_SYSTEM_TICK_STOP: u8 = 1 << 1;
-
 #[cfg(feature = "chip-8258")]
 static mut TIMER0_PERIODIC_IRQ_ENABLED: bool = false;
 #[cfg(feature = "chip-8258")]
@@ -38,6 +37,8 @@ static mut SYSTEM_TIMER_PERIODIC_IRQ_TICKS: u32 = 0;
 static mut SYSTEM_TIMER_IRQ_COUNT: u32 = 0;
 #[cfg(feature = "chip-8258")]
 static mut SYSTEM_TIMER_IRQ_CALLBACK: Option<unsafe extern "C" fn()> = None;
+#[cfg(feature = "chip-8258")]
+static mut SYSTEM_TIMER_NEXT_COMPARE: u32 = 0;
 
 #[cfg(feature = "chip-8258")]
 #[unsafe(no_mangle)]
@@ -69,16 +70,7 @@ pub fn clock_time_exceed_us(reference: u32, microseconds: u32) -> bool {
 #[inline(always)]
 pub fn set_system_timer_irq_capture(tick: u32) {
     unsafe {
-        let now = core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const());
-        let safe_min = now.wrapping_add(12 * SYS_TICK_PER_US);
-        let requested = tick & !0x07;
-        let delta = tick.wrapping_sub(now.wrapping_add(7 * SYS_TICK_PER_US));
-        let value = if delta > (1u32 << 30) {
-            safe_min & !0x07
-        } else {
-            requested
-        };
-        core::ptr::write_volatile(reg32(REG_SYSTEM_TICK_IRQ), value);
+        core::ptr::write_volatile(reg32(REG_SYSTEM_TICK_IRQ), tick & !0x07);
     }
 }
 
@@ -189,10 +181,10 @@ pub fn configure_system_timer_periodic_irq(period_ticks: u32) {
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_PERIODIC_IRQ_ENABLED, true);
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_PERIODIC_IRQ_TICKS, period_ticks);
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_IRQ_COUNT, 0);
+        core::ptr::write_volatile(&raw mut SYSTEM_TIMER_NEXT_COMPARE, first_compare);
         core::ptr::write_volatile(&raw mut TLSR82XX_SYSTEM_TIMER_IRQ_PERIOD_TICKS, period_ticks);
     }
     clear_system_timer_irq_status();
-    start_system_timer();
     set_system_timer_irq_capture(first_compare);
     enable_system_timer_irq();
 }
@@ -216,18 +208,16 @@ pub fn system_timer_periodic_irq_fired() {
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".ram_code")]
 pub extern "C" fn tlsr82xx_system_timer_irq_service() {
-    let capture = system_timer_irq_capture();
-    let now = system_timer_value();
-    clear_system_timer_irq_status();
-    let compare_fired = now.wrapping_sub(capture) < (1 << 30);
-    if !compare_fired {
-        return;
-    }
     if system_timer_periodic_irq_enabled() {
         let period = unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_PERIODIC_IRQ_TICKS) };
-        let next = now.wrapping_add(period);
-        set_system_timer_irq_capture(next & !0x07);
+        let prev_compare = unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_NEXT_COMPARE) };
+        let next = prev_compare.wrapping_add(period) & !0x07;
+        unsafe {
+            core::ptr::write_volatile(&raw mut SYSTEM_TIMER_NEXT_COMPARE, next);
+        }
+        set_system_timer_irq_capture(next);
     }
+    clear_system_timer_irq_status();
     system_timer_periodic_irq_fired();
     unsafe {
         if let Some(callback) = SYSTEM_TIMER_IRQ_CALLBACK {
@@ -255,9 +245,13 @@ pub fn system_timer_irq_phase() -> bool {
 }
 
 #[cfg(feature = "chip-8258")]
-pub fn register_system_timer_irq_callback(callback: unsafe extern "C" fn()) {
+pub fn register_system_timer_irq_callback(callback: crate::interrupt::RamVoidHandler) {
+    crate::interrupt::assert_ram_code_addr(
+        callback.get() as usize,
+        "system timer irq callback",
+    );
     unsafe {
-        core::ptr::write_volatile(&raw mut SYSTEM_TIMER_IRQ_CALLBACK, Some(callback));
+        core::ptr::write_volatile(&raw mut SYSTEM_TIMER_IRQ_CALLBACK, Some(callback.get()));
     }
 }
 
