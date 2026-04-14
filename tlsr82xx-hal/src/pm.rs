@@ -6,11 +6,7 @@ use crate::mmio::{reg32, reg8};
 use crate::regs8258::{REG_MCU_WAKEUP_MASK, REG_PWDN_CTRL};
 
 #[cfg(feature = "chip-8258")]
-const REG_PM_WAIT: usize = 0x0080_074c;
-#[cfg(feature = "chip-8258")]
-const REG_PM_TICK_CTRL: usize = 0x0080_074f;
-#[cfg(feature = "chip-8258")]
-const REG_SYSTEM_WAKEUP_TICK: usize = 0x0080_0754;
+const REG_SYSTEM_WAKEUP_TICK: usize = 0x0080_0748;
 
 const SYS_TICK_HZ: u32 = 16_000_000;
 const RC_32K_HZ: u32 = 32_000;
@@ -162,7 +158,7 @@ pub struct XtalStableTiming {
 
 static mut CLOCK_32K_SOURCE: Clock32kSource = Clock32kSource::InternalRc;
 
-#[cfg(all(feature = "chip-8258", feature = "vendor-pm"))]
+#[cfg(feature = "chip-8258")]
 unsafe extern "C" {
     #[link_name = "cpu_sleep_wakeup_32k_rc"]
     fn vendor_cpu_sleep_wakeup_32k_rc(
@@ -189,7 +185,7 @@ pub fn init(source: Clock32kSource) {
     #[cfg(feature = "chip-8258")]
     if source == Clock32kSource::InternalRc {
         // Vendor clock_32k_init(0) path: switch 32k mux to internal RC.
-        let clk32k_sel = analog::read(0x2d) & 0x7f;
+        let mut clk32k_sel = analog::read(0x2d) & 0x7f;
         analog::write(0x2d, clk32k_sel);
         let mut pm32k_ctrl = analog::read(0x05) & !0x03;
         pm32k_ctrl |= 0x02;
@@ -285,10 +281,12 @@ pub fn sleep_until_tick(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: 
         ) as u32;
     }
     match current_32k_source() {
-        Clock32kSource::InternalRc => cpu_sleep_wakeup_32k_rc_dispatch(mode, wakeup_src, wakeup_tick) as u32,
-        Clock32kSource::ExternalCrystal => {
-            cpu_sleep_wakeup_32k_xtal_dispatch(mode, wakeup_src, wakeup_tick) as u32
-        }
+        Clock32kSource::InternalRc => unsafe {
+            vendor_cpu_sleep_wakeup_32k_rc(mode, wakeup_src, wakeup_tick) as u32
+        },
+        Clock32kSource::ExternalCrystal => unsafe {
+            vendor_cpu_sleep_wakeup_32k_xtal(mode, wakeup_src, wakeup_tick) as u32
+        },
     }
 }
 
@@ -340,8 +338,8 @@ pub fn select_32k_source(source: Clock32kSource) {
         Clock32kSource::ExternalCrystal => pm_tim_recover_32k_xtal as *const () as usize,
     };
     let sleep = match source {
-        Clock32kSource::InternalRc => cpu_sleep_wakeup_32k_rc_dispatch as *const () as usize,
-        Clock32kSource::ExternalCrystal => cpu_sleep_wakeup_32k_xtal_dispatch as *const () as usize,
+        Clock32kSource::InternalRc => vendor_cpu_sleep_wakeup_32k_rc as *const () as usize,
+        Clock32kSource::ExternalCrystal => vendor_cpu_sleep_wakeup_32k_xtal as *const () as usize,
     };
 
     startup::set_pm_tim_recover_handler(recover);
@@ -387,12 +385,9 @@ fn prepare_sleep(
     startup::set_tick_cur(timer::clock_time());
     startup::set_tick_32k_cur(current_32k_tick());
     startup::set_pm_long_suspend(long_sleep);
-    // Keep analog wake-source config in sync with vendor PM path.
-    analog::write(0x26, wakeup_src.raw());
-    analog::write(0x44, 0x0f);
 
     unsafe {
-        core::ptr::write_volatile(reg8(REG_MCU_WAKEUP_MASK), wakeup_src.raw());
+        core::ptr::write_volatile(reg32(REG_MCU_WAKEUP_MASK), wakeup_src.raw() as u32);
         if wakeup_src.contains(WakeupSource::TIMER) {
             let program_tick = if long_sleep {
                 let delta_32k = wakeup_tick.wrapping_sub(startup::current_tick_32k_cur());
@@ -400,13 +395,7 @@ fn prepare_sleep(
             } else {
                 wakeup_tick
             };
-            core::ptr::write_volatile(reg8(REG_PM_WAIT), 0x2c);
             core::ptr::write_volatile(reg32(REG_SYSTEM_WAKEUP_TICK), program_tick);
-            core::ptr::write_volatile(reg8(REG_PM_TICK_CTRL), 0x08);
-            while core::ptr::read_volatile(reg8(REG_PM_TICK_CTRL).cast_const()) != 0 {
-                core::hint::spin_loop();
-            }
-            core::ptr::write_volatile(reg8(REG_PM_WAIT), 0x20);
         }
     }
 }
@@ -432,23 +421,9 @@ fn enter_sleep(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: u32) -> u
         core::ptr::write_volatile(reg8(REG_PWDN_CTRL), mode.raw());
     }
 
-    startup::sleep_start();
-
-    let wake_raw = analog::read(0x44);
-    let mut wakeup_status = 0u32;
-    if (wake_raw & 0x01) != 0 {
-        wakeup_status |= WAKEUP_STATUS_COMPARATOR;
+    loop {
+        core::hint::spin_loop();
     }
-    if (wake_raw & 0x02) != 0 {
-        wakeup_status |= WAKEUP_STATUS_TIMER;
-    }
-    if (wake_raw & 0x04) != 0 {
-        wakeup_status |= WAKEUP_STATUS_CORE;
-    }
-    if (wake_raw & 0x08) != 0 {
-        wakeup_status |= WAKEUP_STATUS_PAD;
-    }
-    wakeup_status
 }
 
 #[cfg(feature = "chip-8258")]
@@ -464,56 +439,6 @@ fn sleep_impl(
     }
     prepare_sleep(wakeup_src, wakeup_tick, source, long_sleep);
     enter_sleep(mode, wakeup_src, wakeup_tick) as i32
-}
-
-#[cfg(feature = "chip-8258")]
-#[inline(always)]
-fn cpu_sleep_wakeup_32k_rc_dispatch(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: u32) -> i32 {
-    #[cfg(feature = "vendor-pm")]
-    unsafe {
-        return vendor_cpu_sleep_wakeup_32k_rc(mode, wakeup_src, wakeup_tick);
-    }
-    #[cfg(not(feature = "vendor-pm"))]
-    {
-        sleep_impl(mode, wakeup_src, wakeup_tick, Clock32kSource::InternalRc, false)
-    }
-}
-
-#[cfg(feature = "chip-8258")]
-#[inline(always)]
-fn cpu_sleep_wakeup_32k_xtal_dispatch(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    wakeup_tick: u32,
-) -> i32 {
-    #[cfg(feature = "vendor-pm")]
-    unsafe {
-        return vendor_cpu_sleep_wakeup_32k_xtal(mode, wakeup_src, wakeup_tick);
-    }
-    #[cfg(not(feature = "vendor-pm"))]
-    {
-        sleep_impl(mode, wakeup_src, wakeup_tick, Clock32kSource::ExternalCrystal, false)
-    }
-}
-
-#[cfg(all(feature = "chip-8258", not(feature = "vendor-pm")))]
-#[unsafe(no_mangle)]
-pub extern "C" fn cpu_sleep_wakeup_32k_rc(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    wakeup_tick: u32,
-) -> i32 {
-    cpu_sleep_wakeup_32k_rc_dispatch(mode, wakeup_src, wakeup_tick)
-}
-
-#[cfg(all(feature = "chip-8258", not(feature = "vendor-pm")))]
-#[unsafe(no_mangle)]
-pub extern "C" fn cpu_sleep_wakeup_32k_xtal(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    wakeup_tick: u32,
-) -> i32 {
-    cpu_sleep_wakeup_32k_xtal_dispatch(mode, wakeup_src, wakeup_tick)
 }
 
 #[cfg(not(feature = "chip-8258"))]
@@ -553,23 +478,12 @@ fn long_sleep_wakeup_impl(
     wakeup_src: WakeupSource,
     wakeup_duration_ticks_32k: u32,
 ) -> i32 {
-    #[cfg(feature = "vendor-pm")]
     if current_32k_source() == Clock32kSource::InternalRc {
         return unsafe { vendor_pm_long_sleep_wakeup(mode, wakeup_src, wakeup_duration_ticks_32k) };
     }
     let wakeup_tick = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k);
     let source = current_32k_source();
     sleep_impl(mode, wakeup_src, wakeup_tick, source, true)
-}
-
-#[cfg(all(feature = "chip-8258", not(feature = "vendor-pm")))]
-#[unsafe(no_mangle)]
-pub extern "C" fn pm_long_sleep_wakeup(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    wakeup_duration_ticks_32k: u32,
-) -> i32 {
-    long_sleep_wakeup_impl(mode, wakeup_src, wakeup_duration_ticks_32k)
 }
 
 #[cfg(test)]
