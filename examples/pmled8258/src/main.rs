@@ -3,41 +3,54 @@
 
 use core::panic::PanicInfo;
 
-use embedded_hal::digital::OutputPin;
+use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::pac;
+use tlsr82xx_hal::pm::Clock32kSource;
 use tlsr82xx_hal::pm::{self, SleepMode, WakeupSource};
 use tlsr82xx_hal::startup::StartupState;
 use tlsr82xx_hal::timer;
 
 mod platform;
 
-const BOOT_WHITE_US: u32 = 3_000_000;
-const YELLOW_ON_US: u32 = 1_000_000;
-const SLEEP_MS: u32 = 1_000;
-const SLEEP_MODE: SleepMode = SleepMode::DeepSleepRetentionLow32K;
+const BOOT_WHITE_US: u32 = 2_000_000;
+const SLEEP_MS: u32 = 1_200;
+const WAKE_BLINK_US: u32 = 220_000;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    let state = platform::init();
+    let _ = platform::init();
+    pm::init(Clock32kSource::InternalRc);
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
 
-    match state {
+    match pm::state() {
         StartupState::Boot => {
-            set_white(&mut board);
+            drive_pin(&mut board.led_y, false);
+            drive_pin(&mut board.led_w, true);
             busy_wait_us(BOOT_WHITE_US);
-            set_all_off(&mut board);
+            drive_pin(&mut board.led_w, false);
         }
-        StartupState::Deep | StartupState::DeepRetention => {
-            set_yellow(&mut board);
-            busy_wait_us(YELLOW_ON_US);
-            set_all_off(&mut board);
+        StartupState::Deep => {
+            drive_pin(&mut board.led_w, false);
+            drive_pin(&mut board.led_y, true);
+            busy_wait_us(WAKE_BLINK_US);
+            drive_pin(&mut board.led_y, false);
+        }
+        StartupState::DeepRetention => {
+            drive_pin(&mut board.led_w, false);
+            drive_pin(&mut board.led_y, true);
+            busy_wait_us(WAKE_BLINK_US);
+            drive_pin(&mut board.led_y, false);
         }
     }
 
     loop {
-        let _ = pm::long_sleep_32k(SLEEP_MODE, WakeupSource::TIMER, SLEEP_MS * 32);
+        let _ = pm::sleep_for_ms(SleepMode::DeepSleep, WakeupSource::TIMER, SLEEP_MS);
     }
+}
+
+fn drive_pin<P: OutputPin>(pin: &mut P, high: bool) {
+    let _ = pin.set_state(PinState::from(high));
 }
 
 fn busy_wait_us(delay_us: u32) {
@@ -45,21 +58,6 @@ fn busy_wait_us(delay_us: u32) {
     while !timer::clock_time_exceed_us(start, delay_us) {
         core::hint::spin_loop();
     }
-}
-
-fn set_white(board: &mut Board) {
-    let _ = board.led_y.set_low();
-    let _ = board.led_w.set_high();
-}
-
-fn set_yellow(board: &mut Board) {
-    let _ = board.led_w.set_low();
-    let _ = board.led_y.set_high();
-}
-
-fn set_all_off(board: &mut Board) {
-    let _ = board.led_y.set_low();
-    let _ = board.led_w.set_low();
 }
 
 #[panic_handler]

@@ -215,8 +215,12 @@ pub fn sleep_for_ms(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32)
 }
 
 #[inline(always)]
-pub fn long_sleep_32k(mode: SleepMode, wakeup_src: WakeupSource, wakeup_ticks_32k: u32) -> u32 {
-    pm_long_sleep_wakeup(mode, wakeup_src, wakeup_ticks_32k) as u32
+pub fn long_sleep_32k(
+    mode: SleepMode,
+    wakeup_src: WakeupSource,
+    duration_ticks_32k: u32,
+) -> u32 {
+    pm_long_sleep_wakeup(mode, wakeup_src, duration_ticks_32k) as u32
 }
 
 #[inline(always)]
@@ -303,14 +307,31 @@ fn prepare_sleep(
 }
 
 #[cfg(feature = "chip-8258")]
-fn enter_sleep(mode: SleepMode) -> u32 {
+fn enter_sleep(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: u32) -> u32 {
     if mode.is_suspend() {
-        startup::sleep_start();
-        let wake = unsafe { core::ptr::read_volatile(reg32(REG_WAKEUP_SRC).cast_const()) };
-        unsafe {
-            core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), timer::clock_time());
-            core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0);
+        if wakeup_src.raw() == WakeupSource::TIMER.raw() {
+            let now = timer::clock_time();
+            let mut delta_ticks = wakeup_tick.wrapping_sub(now);
+            let min_ticks = 4 * timer::SYS_TICK_PER_US;
+            if delta_ticks < min_ticks {
+                delta_ticks = min_ticks;
+            }
+
+            startup::cpu_stall_wakeup_by_timer1(delta_ticks);
+            let status = unsafe { core::ptr::read_volatile(reg32(REG_WAKEUP_SRC).cast_const()) };
+            return status | STATUS_ENTER_SUSPEND;
         }
+
+        let now = timer::clock_time();
+        let delta_ticks = wakeup_tick.wrapping_sub(now);
+        let interval_us = (delta_ticks / timer::SYS_TICK_PER_US).max(1);
+        let stall_mask = if wakeup_src.contains(WakeupSource::TIMER) {
+            // cpu_stall uses timer IRQ mask bits, not PM wake source bits.
+            0x02
+        } else {
+            0
+        };
+        let wake = startup::cpu_stall(stall_mask, interval_us, timer::SYS_TICK_PER_US);
         return wake | STATUS_ENTER_SUSPEND;
     }
 
@@ -331,8 +352,11 @@ fn sleep_impl(
     source: Clock32kSource,
     long_sleep: bool,
 ) -> i32 {
+    if mode.is_suspend() {
+        return enter_sleep(mode, wakeup_src, wakeup_tick) as i32;
+    }
     prepare_sleep(wakeup_src, wakeup_tick, source, long_sleep);
-    enter_sleep(mode) as i32
+    enter_sleep(mode, wakeup_src, wakeup_tick) as i32
 }
 
 #[cfg(not(feature = "chip-8258"))]
@@ -400,8 +424,9 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(
 pub extern "C" fn pm_long_sleep_wakeup(
     mode: SleepMode,
     wakeup_src: WakeupSource,
-    wakeup_tick: u32,
+    wakeup_duration_ticks_32k: u32,
 ) -> i32 {
+    let wakeup_tick = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k);
     let source = current_32k_source();
     sleep_impl(mode, wakeup_src, wakeup_tick, source, true)
 }
