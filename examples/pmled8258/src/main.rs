@@ -10,21 +10,11 @@ use tlsr82xx_hal::{clock, interrupt, pac, pm, startup, timer};
 mod platform;
 
 const SLEEP_MS: u32 = 2_000;
-const SLEEP_TICKS_32K_PER_MS: u32 = 32;
+const XTAL_32K_HZ: u32 = 32_768;
 const WAKE_BLINK_US: u32 = 260_000;
 const MODE_BLINK_US: u32 = 360_000;
 const STARTUP_BLINK_US: u32 = 220_000;
 const PM_DIAG_MAGIC_VALUE: u32 = 0x504D_4447;
-
-#[derive(Clone, Copy)]
-enum SleepProfile {
-    StableLow16K,
-    StableLow32K,
-    CycleLow16KLow32K,
-    CycleAllRetention,
-}
-
-const ACTIVE_PROFILE: SleepProfile = SleepProfile::CycleAllRetention;
 
 #[unsafe(no_mangle)]
 static mut PM_DIAG_MAGIC: u32 = 0;
@@ -54,7 +44,7 @@ pub extern "C" fn main() -> i32 {
     let _ = platform::init();
     clock::init(clock::SysClock::Crystal16M);
     pm::sync_sys_tick_per_us();
-    pm::init(pm::Clock32kSource::InternalRc);
+    pm::init(pm::Clock32kSource::ExternalCrystal);
     let _ = interrupt::enable();
     diag_record_startup();
 
@@ -71,28 +61,17 @@ pub extern "C" fn main() -> i32 {
         let mode_blinks = last_mode_blink_count();
         blink_n(&mut board.led_y, mode_blinks, MODE_BLINK_US);
 
-        let mode = match ACTIVE_PROFILE {
-            SleepProfile::StableLow16K => pm::SleepMode::DeepSleepRetentionLow16K,
-            SleepProfile::StableLow32K => pm::SleepMode::DeepSleepRetentionLow32K,
-            SleepProfile::CycleLow16KLow32K => {
-                if diag_next_mode() == 0 {
-                    pm::SleepMode::DeepSleepRetentionLow16K
-                } else {
-                    pm::SleepMode::DeepSleepRetentionLow32K
-                }
-            }
-            SleepProfile::CycleAllRetention => match diag_next_mode() % 3 {
-                0 => pm::SleepMode::DeepSleepRetentionLow8K,
-                1 => pm::SleepMode::DeepSleepRetentionLow16K,
-                _ => pm::SleepMode::DeepSleepRetentionLow32K,
-            },
+        let mode = match diag_next_mode() % 3 {
+            0 => pm::SleepMode::DeepSleepRetentionLow8K,
+            1 => pm::SleepMode::DeepSleepRetentionLow16K,
+            _ => pm::SleepMode::DeepSleepRetentionLow32K,
         };
         diag_before_sleep(mode);
 
         let _ = pm::long_sleep_32k(
             mode,
             pm::WakeupSource::TIMER,
-            SLEEP_MS.saturating_mul(SLEEP_TICKS_32K_PER_MS),
+            (SLEEP_MS.saturating_mul(XTAL_32K_HZ)) / 1000,
         );
     }
 }
@@ -203,17 +182,9 @@ fn diag_next_mode() -> u32 {
 fn diag_before_sleep(mode: pm::SleepMode) {
     unsafe {
         core::ptr::write_volatile(&raw mut PM_DIAG_LAST_SLEEP_MODE, mode as u32);
-        let next = match ACTIVE_PROFILE {
-            SleepProfile::CycleLow16KLow32K => {
-                (core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE) ^ 1) & 1
-            }
-            SleepProfile::CycleAllRetention => {
-                core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE)
-                    .wrapping_add(1)
-                    % 3
-            }
-            _ => 0,
-        };
+        let next = core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE)
+            .wrapping_add(1)
+            % 3;
         core::ptr::write_volatile(&raw mut PM_DIAG_NEXT_MODE, next);
         let loops = core::ptr::read_volatile(&raw const PM_DIAG_LOOP_COUNT).wrapping_add(1);
         core::ptr::write_volatile(&raw mut PM_DIAG_LOOP_COUNT, loops);

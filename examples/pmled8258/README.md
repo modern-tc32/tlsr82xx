@@ -4,14 +4,17 @@ Power-management example for TLSR8258 in Rust: `sleep -> wake -> blink -> sleep`
 
 ## Current behavior
 
-- 32k source: internal RC.
+- 32k source: external crystal (`ExternalCrystal`).
 - Sleep source: TIMER.
 - Sleep duration: 2 seconds.
-- Sleep modes: alternates between:
-  - `DeepSleepRetentionLow16K`
-  - `DeepSleepRetentionLow32K`
+- Sleep modes: cycles in this order:
+  - `DeepSleepRetentionLow8K` (marker: `6` yellow blinks)
+  - `DeepSleepRetentionLow16K` (marker: `4` yellow blinks)
+  - `DeepSleepRetentionLow32K` (marker: `5` yellow blinks)
 - LED indication:
-  - short yellow pulse on each active window.
+  - startup debug: white blinks show startup wakeup-flag bucket.
+  - short yellow pulse at active window start.
+  - mode marker pulse train (`6/4/5`) after that.
 
 ## Retention diagnostics
 
@@ -25,6 +28,9 @@ The example exports PM diagnostic variables in RAM:
 - `PM_DIAG_WAKE_SRC_RAW`
 - `PM_DIAG_LAST_SLEEP_MODE`
 - `PM_DIAG_NEXT_MODE`
+- `PM_DIAG_STARTUP_WAKEUP_FLAG`
+- `PM_DIAG_STARTUP_ANA7F`
+- `PM_DIAG_STARTUP_ANA3C`
 
 Get their addresses from ELF:
 
