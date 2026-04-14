@@ -21,9 +21,10 @@ enum SleepProfile {
     StableLow16K,
     StableLow32K,
     CycleLow16KLow32K,
+    CycleAllRetention,
 }
 
-const ACTIVE_PROFILE: SleepProfile = SleepProfile::CycleLow16KLow32K;
+const ACTIVE_PROFILE: SleepProfile = SleepProfile::CycleAllRetention;
 
 #[unsafe(no_mangle)]
 static mut PM_DIAG_MAGIC: u32 = 0;
@@ -80,6 +81,11 @@ pub extern "C" fn main() -> i32 {
                     pm::SleepMode::DeepSleepRetentionLow32K
                 }
             }
+            SleepProfile::CycleAllRetention => match diag_next_mode() % 3 {
+                0 => pm::SleepMode::DeepSleepRetentionLow8K,
+                1 => pm::SleepMode::DeepSleepRetentionLow16K,
+                _ => pm::SleepMode::DeepSleepRetentionLow32K,
+            },
         };
         diag_before_sleep(mode);
 
@@ -136,7 +142,9 @@ fn blink_startup_debug(board: &mut Board) {
 
 fn last_mode_blink_count() -> u8 {
     let last = unsafe { core::ptr::read_volatile(&raw const PM_DIAG_LAST_SLEEP_MODE) as u8 };
-    if last == pm::SleepMode::DeepSleepRetentionLow16K as u8 {
+    if last == pm::SleepMode::DeepSleepRetentionLow8K as u8 {
+        6
+    } else if last == pm::SleepMode::DeepSleepRetentionLow16K as u8 {
         4
     } else if last == pm::SleepMode::DeepSleepRetentionLow32K as u8 {
         5
@@ -188,7 +196,7 @@ fn diag_record_startup() {
 
 #[inline(always)]
 fn diag_next_mode() -> u32 {
-    unsafe { core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE) & 1 }
+    unsafe { core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE) }
 }
 
 #[inline(always)]
@@ -198,6 +206,11 @@ fn diag_before_sleep(mode: pm::SleepMode) {
         let next = match ACTIVE_PROFILE {
             SleepProfile::CycleLow16KLow32K => {
                 (core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE) ^ 1) & 1
+            }
+            SleepProfile::CycleAllRetention => {
+                core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE)
+                    .wrapping_add(1)
+                    % 3
             }
             _ => 0,
         };
