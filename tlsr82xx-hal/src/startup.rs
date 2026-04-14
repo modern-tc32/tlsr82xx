@@ -829,7 +829,12 @@ pub extern "C" fn cpu_wakeup_init() {
         analog::write(0x01, 0x4c);
     }
 
-    let need_read_wakeup_src = if (analog::read(0x7f) & 0x01) != 0 {
+    let need_read_wakeup_src = if wakeup_flag == 2 && (analog::read(0x3c) & 0x02) == 0 {
+        unsafe {
+            pmParam.mcu_status = MCU_STATUS_BOOT;
+        }
+        false
+    } else if (analog::read(0x7f) & 0x01) != 0 {
         unsafe {
             pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
         }

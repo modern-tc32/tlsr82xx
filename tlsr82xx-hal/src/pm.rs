@@ -121,6 +121,13 @@ pub enum Clock32kSource {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WakeOrigin {
+    ColdBoot,
+    DeepWake,
+    DeepRetentionWake,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum WakeupLevel {
     Low = 0,
@@ -206,6 +213,27 @@ fn rc_32k_cal_vendor_like() {
 #[inline(always)]
 pub fn state() -> startup::StartupState {
     startup::startup_state()
+}
+
+#[inline(always)]
+pub fn wake_origin() -> WakeOrigin {
+    match startup::startup_state() {
+        startup::StartupState::Boot => WakeOrigin::ColdBoot,
+        startup::StartupState::Deep => WakeOrigin::DeepWake,
+        startup::StartupState::DeepRetention => WakeOrigin::DeepRetentionWake,
+    }
+}
+
+#[inline(always)]
+pub fn is_cold_boot() -> bool {
+    matches!(wake_origin(), WakeOrigin::ColdBoot)
+}
+
+#[inline(always)]
+pub fn sync_sys_tick_per_us() {
+    unsafe {
+        startup::sysTimerPerUs = timer::sys_tick_per_us();
+    }
 }
 
 #[inline(always)]

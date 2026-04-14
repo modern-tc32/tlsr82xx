@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 
 use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::{clock, interrupt, pac, pm, startup, timer};
+use tlsr82xx_hal::{clock, interrupt, pac, pm, timer};
 
 mod platform;
 
@@ -16,11 +16,9 @@ const WAKE_BLINK_US: u32 = 120_000;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
-    let startup_state = platform::init();
+    let _ = platform::init();
     clock::init(clock::SysClock::Crystal16M);
-    unsafe {
-        startup::sysTimerPerUs = timer::sys_tick_per_us();
-    }
+    pm::sync_sys_tick_per_us();
     pm::init(pm::Clock32kSource::InternalRc);
     let _ = interrupt::enable();
 
@@ -29,7 +27,7 @@ pub extern "C" fn main() -> i32 {
     drive_pin(&mut board.led_w, false);
 
     // White LED only on true cold boot.
-    if startup_state == startup::StartupState::Boot {
+    if pm::is_cold_boot() {
         drive_pin(&mut board.led_w, true);
         delay_us(BOOT_WHITE_US);
         drive_pin(&mut board.led_w, false);
