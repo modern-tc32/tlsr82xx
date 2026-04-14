@@ -1,40 +1,24 @@
 # pmled8258
 
-Power-management example for TLSR8258: `sleep -> wake -> blink -> sleep`.
+Power-management example for TLSR8258 in Rust: `sleep -> wake -> blink -> sleep`.
 
 ## Current behavior
 
-Current mode: `DeepSleep + TIMER`.
+Current mode: `DeepSleep + TIMER` (32k RC long sleep path).
 
 Sequence:
 
-1. On cold boot (`StartupState::Boot`), LED is white for ~2 seconds.
-2. Device enters `DeepSleep` for `SLEEP_MS`.
-3. Timer wakeup causes MCU restart (`StartupState::Deep`).
-4. Short yellow blink (`WAKE_BLINK_US`) marks wake event.
-5. Device enters `DeepSleep` again.
+1. On true cold boot (`StartupState::Boot`), LED is white briefly.
+2. Device blinks yellow shortly to mark active window.
+3. Device enters `DeepSleep`.
+4. Timer wakes MCU, firmware starts again, and the loop repeats.
+
+During normal deep-sleep wake cycles there is no repeated white startup pulse.
 
 ## Why it previously failed
 
-The issue was not the return type of `platform::init()` itself.
-
-This is valid by itself:
-
-```rust
-pub fn init() -> tlsr82xx_hal::startup::StartupState {
-    tlsr82xx_hal::startup::init()
-}
-```
-
-The real problem was divergence from the known-good `blink8258` boot path while PM experiments were added around startup. That caused unstable early boot (hangs / pseudo boot loops).
-
-What stabilized the example:
-
-1. Bring `platform::init()` back close to the proven path (`startup::init()` without extra logic).
-2. Re-introduce PM behavior only after stable boot is confirmed.
-3. Fix timer PM path issues in `startup`/PM flow (register offset / mode bits), which were causing lockups and pseudo boot loops.
-
-Bottom line: stabilize boot first, then add sleep path.
+Deep-sleep wake on 8258 is sensitive to HAL/vendor PM alignment.  
+The working setup uses stage2 toolchain and keeps PM startup/wakeup flow close to `drivers/pm.s`.
 
 ## Build and flash
 

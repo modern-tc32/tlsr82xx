@@ -177,6 +177,13 @@ unsafe extern "C" {
 pub fn init(source: Clock32kSource) {
     #[cfg(feature = "chip-8258")]
     if source == Clock32kSource::InternalRc {
+        // Vendor clock_32k_init(0) path: switch 32k mux to internal RC.
+        let mut clk32k_sel = analog::read(0x2d) & 0x7f;
+        analog::write(0x2d, clk32k_sel);
+        let mut pm32k_ctrl = analog::read(0x05) & !0x03;
+        pm32k_ctrl |= 0x02;
+        analog::write(0x05, pm32k_ctrl);
+
         rc_32k_cal_vendor_like();
     }
     select_32k_source(source);
@@ -272,7 +279,7 @@ pub fn long_sleep_32k(
     wakeup_src: WakeupSource,
     duration_ticks_32k: u32,
 ) -> u32 {
-    pm_long_sleep_wakeup(mode, wakeup_src, duration_ticks_32k) as u32
+    long_sleep_wakeup_impl(mode, wakeup_src, duration_ticks_32k) as u32
 }
 
 #[inline(always)]
@@ -290,6 +297,13 @@ pub fn select_32k_source(source: Clock32kSource) {
     unsafe {
         core::ptr::write_volatile(&raw mut CLOCK_32K_SOURCE, source);
     }
+
+    let tick_32k_calib = match source {
+        Clock32kSource::InternalRc => 500u16,
+        // 16MHz / 32768Hz ~= 488.281
+        Clock32kSource::ExternalCrystal => 488u16,
+    };
+    startup::set_tick_32k_calib(tick_32k_calib);
 
     let recover = match source {
         Clock32kSource::InternalRc => pm_tim_recover_32k_rc as *const () as usize,
@@ -431,37 +445,7 @@ fn pm_tim_recover_impl(now_tick_32k: u32, source: Clock32kSource) -> u32 {
 }
 
 #[inline(always)]
-pub extern "C" fn cpu_sleep_wakeup_32k_rc(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    wakeup_tick: u32,
-) -> i32 {
-    sleep_impl(
-        mode,
-        wakeup_src,
-        wakeup_tick,
-        Clock32kSource::InternalRc,
-        false,
-    )
-}
-
-#[inline(always)]
-pub extern "C" fn cpu_sleep_wakeup_32k_xtal(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    wakeup_tick: u32,
-) -> i32 {
-    sleep_impl(
-        mode,
-        wakeup_src,
-        wakeup_tick,
-        Clock32kSource::ExternalCrystal,
-        false,
-    )
-}
-
-#[inline(always)]
-pub extern "C" fn pm_long_sleep_wakeup(
+fn long_sleep_wakeup_impl(
     mode: SleepMode,
     wakeup_src: WakeupSource,
     wakeup_duration_ticks_32k: u32,

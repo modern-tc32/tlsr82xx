@@ -10,7 +10,7 @@ use crate::regs8258::{
     REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI, REG_SYSTEM_TICK,
     REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
 };
-use crate::{analog, clock, interrupt, timer};
+use crate::{analog, clock, gpio, interrupt, timer};
 
 unsafe extern "C" {
     static mut _dstored_: u32;
@@ -342,10 +342,34 @@ pub extern "C" fn LoadTblCmdSet(pt: *const TblCmdSet, size: i32) -> i32 {
     size
 }
 
+#[inline(always)]
+fn boot_init_pa7_sws() {
+    // Force PA7 to SWire and input-enabled as early as possible.
+    // This keeps SWD/SWS attach reliable even if PM flow fails later.
+    unsafe {
+        let mux_pa_4_7 = reg8(0x0080_05a9);
+        let mux = core::ptr::read_volatile(mux_pa_4_7.cast_const()) & !(0b11 << 6);
+        core::ptr::write_volatile(mux_pa_4_7, mux);
+
+        let gpio_func = reg8(0x0080_0586);
+        let func = core::ptr::read_volatile(gpio_func.cast_const()) & !0x80;
+        core::ptr::write_volatile(gpio_func, func);
+
+        let gpio_ie = reg8(0x0080_0581);
+        let ie = core::ptr::read_volatile(gpio_ie.cast_const()) | 0x80;
+        core::ptr::write_volatile(gpio_ie, ie);
+
+        let gpio_oen = reg8(0x0080_0582);
+        let oen = core::ptr::read_volatile(gpio_oen.cast_const()) | 0x80;
+        core::ptr::write_volatile(gpio_oen, oen);
+    }
+}
+
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".vectors.boot")]
 pub extern "C" fn __tc32_boot_init() -> ! {
     unsafe {
+        boot_init_pa7_sws();
         __tc32_init_icache(
             core::ptr::addr_of_mut!(_ictag_start_),
             core::ptr::addr_of_mut!(_ictag_end_),
@@ -356,7 +380,7 @@ pub extern "C" fn __tc32_boot_init() -> ! {
         __tc32_efuse_delay();
 
         let wake_flag = __tc32_analog_read_u8(0x7e);
-        if (wake_flag & 1) != 0 {
+        if wake_flag != 0 {
             core::ptr::write_volatile(reg8(0x80063e), tl_multi_addr);
         } else {
             __tc32_fill_stack_pattern(
@@ -805,12 +829,7 @@ pub extern "C" fn cpu_wakeup_init() {
         analog::write(0x01, 0x4c);
     }
 
-    let need_read_wakeup_src = if wakeup_flag == 2 {
-        unsafe {
-            pmParam.mcu_status = MCU_STATUS_BOOT;
-        }
-        false
-    } else if (analog::read(0x7f) & 0x01) != 0 {
+    let need_read_wakeup_src = if (analog::read(0x7f) & 0x01) != 0 {
         unsafe {
             pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
         }
@@ -822,7 +841,7 @@ pub extern "C" fn cpu_wakeup_init() {
                 pmParam.mcu_status = MCU_STATUS_DEEP_BACK;
             }
             analog::write(0x3c, deep_back & 0xfd);
-            true
+            false
         } else {
             unsafe {
                 pmParam.mcu_status = MCU_STATUS_BOOT;
@@ -861,7 +880,6 @@ pub extern "C" fn cpu_wakeup_init() {
     } else {
         unsafe {
             core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), 0);
-            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x12);
             core::ptr::write_volatile(reg8(REG_PM_WAIT), 0x01);
         }
         pm_wait_xtal_ready();
@@ -930,6 +948,13 @@ pub fn set_tick_32k_cur(value: u32) {
 }
 
 #[inline(always)]
+pub fn set_tick_32k_calib(value: u16) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut tick_32k_calib, value);
+    }
+}
+
+#[inline(always)]
 pub fn current_tick_32k_cur() -> u32 {
     unsafe { core::ptr::read_volatile(&raw const tick_32k_cur) }
 }
@@ -946,6 +971,11 @@ pub fn init() -> StartupState {
     interrupt::disable();
     interrupt::clear_mask(interrupt::ALL_IRQS);
     interrupt::clear_all_irq_sources();
+
+    if let Ok(pa7) = gpio::RawPin::try_from_u16(0x0080) {
+        let _ = gpio::set_function_for_raw_pin(pa7, gpio::PinFunction::Swire);
+        gpio::set_input_enabled_raw(pa7, true);
+    }
 
     cpu_wakeup_init();
     clock::init(clock::SysClock::Crystal48M);

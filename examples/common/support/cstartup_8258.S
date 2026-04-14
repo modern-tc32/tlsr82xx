@@ -37,6 +37,7 @@ __irq_vector:
     ldr r0, =__irq
     bx r0
 
+    .section .ram_code, "ax", %progbits
     .align 2
     .thumb_func
 start_suspend:
@@ -50,6 +51,7 @@ start_suspend:
     pop {r2, r3}
     bx lr
 
+    .section .vectors, "ax", %progbits
     .align 2
     .thumb_func
 __reset:
