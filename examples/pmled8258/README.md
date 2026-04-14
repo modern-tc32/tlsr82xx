@@ -4,39 +4,46 @@ Power-management example for TLSR8258 in Rust: `sleep -> wake -> blink -> sleep`
 
 ## Current behavior
 
-Current mode: `DeepSleep + TIMER` (32k RC long sleep path).
+- 32k source: internal RC.
+- Sleep source: TIMER.
+- Sleep duration: 2 seconds.
+- Sleep modes: alternates between:
+  - `DeepSleepRetentionLow16K`
+  - `DeepSleepRetentionLow32K`
+- LED indication:
+  - short yellow pulse on each active window.
 
-Sequence:
+## Retention diagnostics
 
-1. On true cold boot (`StartupState::Boot`), LED is white briefly.
-2. Device blinks yellow shortly to mark active window.
-3. Device enters `DeepSleep`.
-4. Timer wakes MCU, firmware starts again, and the loop repeats.
+The example exports PM diagnostic variables in RAM:
 
-During normal deep-sleep wake cycles there is no repeated white startup pulse.
+- `PM_DIAG_MAGIC`
+- `PM_DIAG_BOOT_COUNT`
+- `PM_DIAG_WAKE_COUNT`
+- `PM_DIAG_LOOP_COUNT`
+- `PM_DIAG_WAKE_ORIGIN` (`0=ColdBoot`, `1=DeepWake`, `2=DeepRetentionWake`)
+- `PM_DIAG_WAKE_SRC_RAW`
+- `PM_DIAG_LAST_SLEEP_MODE`
+- `PM_DIAG_NEXT_MODE`
 
-## Why it previously failed
+Get their addresses from ELF:
 
-Deep-sleep wake on 8258 is sensitive to HAL/vendor PM alignment.  
-The working setup uses stage2 toolchain and keeps PM startup/wakeup flow close to `drivers/pm.s`.
+```bash
+toolchains/tc32-stage2/llvm/bin/llvm-nm -n tlsr82xx/target/tc32-unknown-none-elf/release/pmled8258 | rg PM_DIAG
+```
+
+Read RAM via SWire (example: dump 32 bytes at diagnostic base address):
+
+```bash
+python3 TlsrPgm.py --tcp 192.168.70.44:55555 -a 100 -s ds 0x<ADDR> 0x20
+```
 
 ## Build and flash
 
-Build (stage2, default Rust PM path):
+Build (stage2):
 
 ```bash
 make -C tlsr82xx/examples/pmled8258 release
-```
-
-Build (stage2, vendor PM fallback):
-
-```bash
-cd tlsr82xx/examples/pmled8258
-PATH="$(pwd)/../../../toolchains/tc32-stage2/llvm/bin:$PATH" \
-RUSTC="$(pwd)/../../../toolchains/tc32-stage2/bin/rustc" \
-TC32_LLVM_BIN="$(pwd)/../../../toolchains/tc32-stage2/llvm/bin" \
-CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(pwd)/../../../toolchains/tc32-stage2/llvm/bin/ld.lld" \
-"$(pwd)/../../../toolchains/tc32-stage2/bin/cargo" build --release --target tc32-unknown-none-elf --features vendor-pm
 ```
 
 Flash:

@@ -133,6 +133,13 @@ pub static mut pm_bit_info_0: u8 = 0;
 pub static mut pm_bit_info_1: u8 = 0;
 
 #[unsafe(no_mangle)]
+pub static mut PM_STARTUP_DBG_WAKEUP_FLAG: u8 = 0;
+#[unsafe(no_mangle)]
+pub static mut PM_STARTUP_DBG_ANA7F: u8 = 0;
+#[unsafe(no_mangle)]
+pub static mut PM_STARTUP_DBG_ANA3C: u8 = 0;
+
+#[unsafe(no_mangle)]
 pub extern "C" fn efuse_sys_check(info1: u32) {
     let info0 = pm_get_info0();
     let low_nibble = info0 & 0x0f;
@@ -823,24 +830,31 @@ pub extern "C" fn cpu_wakeup_init() {
     }
 
     let wakeup_flag = unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) };
+    let ana_7f = analog::read(0x7f);
+    let ana_3c = analog::read(0x3c);
+    unsafe {
+        PM_STARTUP_DBG_WAKEUP_FLAG = wakeup_flag;
+        PM_STARTUP_DBG_ANA7F = ana_7f;
+        PM_STARTUP_DBG_ANA3C = ana_3c;
+    }
     if wakeup_flag == 1 {
         analog::write(0x01, 0x3c);
     } else {
         analog::write(0x01, 0x4c);
     }
 
-    let need_read_wakeup_src = if wakeup_flag == 2 && (analog::read(0x3c) & 0x02) == 0 {
+    let need_read_wakeup_src = if (wakeup_flag & 0x01) != 0 {
         unsafe {
-            pmParam.mcu_status = MCU_STATUS_BOOT;
+            pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
         }
-        false
-    } else if (analog::read(0x7f) & 0x01) != 0 {
+        true
+    } else if (ana_7f & 0x01) != 0 {
         unsafe {
             pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
         }
         true
     } else {
-        let deep_back = analog::read(0x3c);
+        let deep_back = ana_3c;
         if (deep_back & 0x02) != 0 {
             unsafe {
                 pmParam.mcu_status = MCU_STATUS_DEEP_BACK;
