@@ -22,10 +22,21 @@ The working setup uses stage2 toolchain and keeps PM startup/wakeup flow close t
 
 ## Build and flash
 
-Build (stage2):
+Build (stage2, default Rust PM path):
 
 ```bash
 make -C tlsr82xx/examples/pmled8258 release
+```
+
+Build (stage2, vendor PM fallback):
+
+```bash
+cd tlsr82xx/examples/pmled8258
+PATH="$(pwd)/../../../toolchains/tc32-stage2/llvm/bin:$PATH" \
+RUSTC="$(pwd)/../../../toolchains/tc32-stage2/bin/rustc" \
+TC32_LLVM_BIN="$(pwd)/../../../toolchains/tc32-stage2/llvm/bin" \
+CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(pwd)/../../../toolchains/tc32-stage2/llvm/bin/ld.lld" \
+"$(pwd)/../../../toolchains/tc32-stage2/bin/cargo" build --release --target tc32-unknown-none-elf --features vendor-pm
 ```
 
 Flash:

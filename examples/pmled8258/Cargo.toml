@@ -11,8 +11,9 @@ path = "src/main.rs"
 
 [features]
 default = []
+vendor-pm = ["tlsr82xx-hal/vendor-pm"]
 
 [dependencies]
 embedded-hal = "1"
-tlsr82xx-hal = { path = "../../tlsr82xx-hal", features = ["chip-8258"] }
+tlsr82xx-hal = { path = "../../tlsr82xx-hal", default-features = false, features = ["chip-8258"] }
 tlsr82xx-boards = { path = "../../tlsr82xx-boards", features = ["chip-8258"] }
