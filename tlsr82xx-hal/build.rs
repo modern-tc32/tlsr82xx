@@ -13,8 +13,12 @@ fn main() {
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set"));
     let workspace_root = manifest_dir.parent().expect("workspace root");
-    let llvm_bin =
-        resolve_path("TC32_LLVM_BIN", workspace_root, || workspace_root.join("build-tc32-triple/bin"));
+    let llvm_bin = resolve_path("TC32_LLVM_BIN", workspace_root, || {
+        workspace_root
+            .parent()
+            .expect("repo root")
+            .join("toolchains/tc32-stage2/llvm/bin")
+    });
     let clang = llvm_bin.join("clang");
     let ar = resolve_ar(workspace_root);
 

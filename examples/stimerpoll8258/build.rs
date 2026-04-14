@@ -14,8 +14,9 @@ fn main() {
         .parent()
         .and_then(Path::parent)
         .expect("workspace root lives under repository root");
-    let llvm_bin =
-        resolve_path("TC32_LLVM_BIN", repo_root, || repo_root.join("build-tc32-triple/bin"));
+    let llvm_bin = resolve_path("TC32_LLVM_BIN", repo_root, || {
+        repo_root.join("toolchains/tc32-stage2/llvm/bin")
+    });
     let clang = llvm_bin.join("clang");
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is set"));
     let object_dir = out_dir.join("objects");
@@ -138,4 +139,3 @@ fn run(command: &mut Command, source: &Path) {
         panic!("compilation failed for {}", source.display());
     }
 }
-

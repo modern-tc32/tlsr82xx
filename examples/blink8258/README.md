@@ -22,17 +22,17 @@ The example uses:
 From the repo root:
 
 ```sh
-./scripts/package-stage1-tc32-toolchain.sh
+./scripts/package-stage2-tc32-toolchain.sh
 ```
 
 This creates:
 
 ```sh
-toolchains/tc32-stage1-aarch64-apple-darwin
-toolchains/tc32-stage1
+toolchains/tc32-stage2-aarch64-apple-darwin
+toolchains/tc32-stage2
 ```
 
-`toolchains/tc32-stage1` is the default path used by the local `Makefile`.
+`toolchains/tc32-stage2` is the default path used by the local `Makefile`.
 
 Optional overrides if your SDK layout differs:
 
@@ -67,6 +67,6 @@ Outputs:
 Optional disassembly check:
 
 ```sh
-../../../toolchains/tc32-stage1/llvm/bin/llvm-objdump -d \
+../../../toolchains/tc32-stage2/llvm/bin/llvm-objdump -d \
   ../../target/tc32-unknown-none-elf/release/tlsr82xx-blink8258 | head
 ```

@@ -2,7 +2,7 @@
 
 TARGET := tc32-unknown-none-elf
 PROFILE ?= debug
-TC32_TOOLCHAIN ?= $(abspath ../../../toolchains/tc32-stage1)
+TC32_TOOLCHAIN ?= $(abspath ../../../toolchains/tc32-stage2)
 TC32_CARGO ?= $(TC32_TOOLCHAIN)/bin/cargo
 TC32_RUSTC ?= $(TC32_TOOLCHAIN)/bin/rustc
 TC32_LLVM_BIN ?= $(TC32_TOOLCHAIN)/llvm/bin
@@ -22,11 +22,11 @@ help:
 	@echo "  make clean        Remove example build outputs"
 	@echo ""
 	@echo "Primary flow:"
-	@echo "  1. ../../../scripts/package-stage1-tc32-toolchain.sh"
+	@echo "  1. ../../../scripts/package-stage2-tc32-toolchain.sh"
 	@echo "  2. make debug"
 	@echo ""
 	@echo "Optional overrides:"
-	@echo "  TC32_TOOLCHAIN (default: ../../../toolchains/tc32-stage1)"
+	@echo "  TC32_TOOLCHAIN (default: ../../../toolchains/tc32-stage2)"
 	@echo "  TC32_CARGO (default: $(TC32_TOOLCHAIN)/bin/cargo)"
 	@echo "  TC32_RUSTC (default: $(TC32_TOOLCHAIN)/bin/rustc)"
 	@echo "  TC32_LLVM_BIN (default: $(TC32_TOOLCHAIN)/llvm/bin)"
@@ -53,12 +53,14 @@ bin: debug
 bin-release: release
 
 $(ELF_debug): check-env
+	PATH="$(TC32_LLVM_BIN):$$PATH" \
 	RUSTC="$(TC32_RUSTC)" \
 	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \
 	"$(TC32_CARGO)" build --target "$(TARGET)"
 
 $(ELF_release): check-env
+	PATH="$(TC32_LLVM_BIN):$$PATH" \
 	RUSTC="$(TC32_RUSTC)" \
 	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \

@@ -41,12 +41,14 @@ bin: debug
 bin-release: release
 
 $(ELF_debug): check-env
+	PATH="$(TC32_LLVM_BIN):$$PATH" \
 	RUSTC="$(TC32_RUSTC)" \
 	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \
 	"$(TC32_CARGO)" build --target "$(TARGET)"
 
 $(ELF_release): check-env
+	PATH="$(TC32_LLVM_BIN):$$PATH" \
 	RUSTC="$(TC32_RUSTC)" \
 	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \

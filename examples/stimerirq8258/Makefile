@@ -1,7 +1,7 @@
 .PHONY: all help debug release bin bin-release clean check-env
 
 TARGET := tc32-unknown-none-elf
-TC32_TOOLCHAIN ?= $(abspath ../../../toolchains/tc32-stage1)
+TC32_TOOLCHAIN ?= $(abspath ../../../toolchains/tc32-stage2)
 TC32_CARGO ?= $(TC32_TOOLCHAIN)/bin/cargo
 TC32_RUSTC ?= $(TC32_TOOLCHAIN)/bin/rustc
 TC32_LLVM_BIN ?= $(TC32_TOOLCHAIN)/llvm/bin
@@ -41,12 +41,14 @@ bin: debug
 bin-release: release
 
 $(ELF_debug): check-env
+	PATH="$(TC32_LLVM_BIN):$$PATH" \
 	RUSTC="$(TC32_RUSTC)" \
 	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \
 	"$(TC32_CARGO)" build --target "$(TARGET)" -p tlsr82xx-stimerirq8258
 
 $(ELF_release): check-env
+	PATH="$(TC32_LLVM_BIN):$$PATH" \
 	RUSTC="$(TC32_RUSTC)" \
 	TC32_LLVM_BIN="$(TC32_LLVM_BIN)" \
 	CARGO_TARGET_TC32_UNKNOWN_NONE_ELF_LINKER="$(TC32_LLVM_BIN)/ld.lld" \

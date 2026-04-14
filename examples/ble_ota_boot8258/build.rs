@@ -16,8 +16,9 @@ fn main() {
         .and_then(Path::parent)
         .expect("workspace root lives under repository root");
 
-    let llvm_bin =
-        resolve_path("TC32_LLVM_BIN", repo_root, || repo_root.join("build-tc32-triple/bin"));
+    let llvm_bin = resolve_path("TC32_LLVM_BIN", repo_root, || {
+        repo_root.join("toolchains/tc32-stage2/llvm/bin")
+    });
     let sdk_root = resolve_path("TC_BLE_SDK_ROOT", repo_root, || {
         repo_root
             .parent()
