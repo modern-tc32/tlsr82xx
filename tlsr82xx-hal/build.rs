@@ -55,7 +55,34 @@ fn main() {
     }
 
     if objects.is_empty() {
-        return;
+        let vendor_pm_rc = workspace_root.parent().expect("repo root").join("drivers/pm_32k_rc.o");
+        if !vendor_pm_rc.exists() {
+            return;
+        }
+        println!("cargo:rerun-if-changed={}", vendor_pm_rc.display());
+        objects.push(vendor_pm_rc);
+        let vendor_pm_xtal = workspace_root
+            .parent()
+            .expect("repo root")
+            .join("drivers/pm_32k_xtal.o");
+        if vendor_pm_xtal.exists() {
+            println!("cargo:rerun-if-changed={}", vendor_pm_xtal.display());
+            objects.push(vendor_pm_xtal);
+        }
+    } else {
+        let vendor_pm_rc = workspace_root.parent().expect("repo root").join("drivers/pm_32k_rc.o");
+        if vendor_pm_rc.exists() {
+            println!("cargo:rerun-if-changed={}", vendor_pm_rc.display());
+            objects.push(vendor_pm_rc);
+        }
+        let vendor_pm_xtal = workspace_root
+            .parent()
+            .expect("repo root")
+            .join("drivers/pm_32k_xtal.o");
+        if vendor_pm_xtal.exists() {
+            println!("cargo:rerun-if-changed={}", vendor_pm_xtal.display());
+            objects.push(vendor_pm_xtal);
+        }
     }
 
     let lib_name = "tlsr82xx_hal_irq_asm_8258";

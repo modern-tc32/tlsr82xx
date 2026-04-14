@@ -655,15 +655,23 @@ pub extern "C" fn sleep_start() {
 }
 
 #[inline(always)]
-fn cpu_stall_wakeup_by_timer_common(tick_addr: usize, tick: u32, mask: u32, timer_bit: u8) {
+fn cpu_stall_wakeup_by_timer_common(
+    tick_addr: usize,
+    tick: u32,
+    mask: u32,
+    timer_bit: u8,
+    mode_clear_mask: u16,
+    ctrl_offset_from_tick: usize,
+) {
     unsafe {
         core::ptr::write_volatile(reg32(tick_addr), 0);
         core::ptr::write_volatile(reg32(tick_addr - 12), tick);
-        let ctrl = reg16(tick_addr - 4);
+        let ctrl_addr = tick_addr - ctrl_offset_from_tick;
+        let ctrl = reg16(ctrl_addr);
         let mut mode = core::ptr::read_volatile(ctrl.cast_const());
-        mode &= !(timer_bit as u16 | ((timer_bit as u16) << 1));
+        mode &= !mode_clear_mask;
         core::ptr::write_volatile(ctrl, mode);
-        let ctrl8 = reg8(tick_addr - 4);
+        let ctrl8 = reg8(ctrl_addr);
         let mut mode8 = core::ptr::read_volatile(ctrl8.cast_const());
         mode8 |= timer_bit;
         core::ptr::write_volatile(ctrl8, mode8);
@@ -684,40 +692,17 @@ fn cpu_stall_wakeup_by_timer_common(tick_addr: usize, tick: u32, mask: u32, time
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_stall_wakeup_by_timer0(tick: u32) {
-    cpu_stall_wakeup_by_timer_common(REG_TMR0_TICK, tick, 1, 0x01);
+    cpu_stall_wakeup_by_timer_common(REG_TMR0_TICK, tick, 1, 0x01, 0x06, 16);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_stall_wakeup_by_timer1(tick: u32) {
-    cpu_stall_wakeup_by_timer_common(REG_TMR1_TICK, tick, 2, 0x08);
+    cpu_stall_wakeup_by_timer_common(REG_TMR1_TICK, tick, 2, 0x08, 0x30, 20);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn cpu_stall_wakeup_by_timer2(tick: u32) {
-    unsafe {
-        core::ptr::write_volatile(reg32(REG_TMR2_TICK), 0);
-        core::ptr::write_volatile(reg32(REG_TMR2_TICK - 12), tick);
-        let ctrl = reg16(REG_TMR2_TICK - 12);
-        let mut mode = core::ptr::read_volatile(ctrl.cast_const());
-        mode &= 0xff7d;
-        core::ptr::write_volatile(ctrl, mode);
-        let ctrl8 = reg8(REG_TMR2_TICK - 12);
-        let mut mode8 = core::ptr::read_volatile(ctrl8.cast_const());
-        mode8 |= 0x40;
-        core::ptr::write_volatile(ctrl8, mode8);
-
-        let irq = reg32(REG_MCU_WAKEUP_MASK);
-        core::ptr::write_volatile(irq, core::ptr::read_volatile(irq.cast_const()) | 4);
-        core::ptr::write_volatile(reg8(REG_TMR_STA), 4);
-        core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x80);
-        core::hint::spin_loop();
-        core::hint::spin_loop();
-        core::ptr::write_volatile(reg8(REG_TMR_STA), 4);
-
-        let mut final_ctrl = core::ptr::read_volatile(ctrl8.cast_const());
-        final_ctrl &= !0x40;
-        core::ptr::write_volatile(ctrl8, final_ctrl);
-    }
+    cpu_stall_wakeup_by_timer_common(REG_TMR2_TICK, tick, 4, 0x40, 0x0082, 24);
 }
 
 #[unsafe(no_mangle)]
@@ -730,7 +715,8 @@ pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) 
                 reg32(REG_TMR1_TICK - 12),
                 interval_us.wrapping_mul(sysclktick),
             );
-            let ctrl = reg8(REG_TMR1_TICK - 8);
+            core::ptr::write_volatile(reg8(REG_TMR_STA), 2);
+            let ctrl = reg8(REG_TMR1_TICK - 20);
             let mut value = core::ptr::read_volatile(ctrl.cast_const());
             value &= !0x30;
             value |= 0x08;
@@ -972,7 +958,7 @@ pub fn init() -> StartupState {
         }
     }
     unsafe {
-        sysTimerPerUs = timer::SYS_TICK_PER_US;
+        sysTimerPerUs = timer::sys_tick_per_us();
     }
 
     startup_state()

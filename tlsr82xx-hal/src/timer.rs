@@ -60,10 +60,22 @@ pub fn clock_time_exceed_ticks(reference: u32, ticks: u32) -> bool {
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub const SYS_TICK_PER_US: u32 = 16;
 
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
+pub fn sys_tick_per_us() -> u32 {
+    crate::clock::current_mhz() as u32
+}
+
+#[cfg(not(feature = "chip-8258"))]
+#[inline(always)]
+pub fn sys_tick_per_us() -> u32 {
+    SYS_TICK_PER_US
+}
+
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 #[inline(always)]
 pub fn clock_time_exceed_us(reference: u32, microseconds: u32) -> bool {
-    clock_time_exceed_ticks(reference, microseconds.wrapping_mul(SYS_TICK_PER_US))
+    clock_time_exceed_ticks(reference, microseconds.wrapping_mul(sys_tick_per_us()))
 }
 
 #[cfg(feature = "chip-8258")]
