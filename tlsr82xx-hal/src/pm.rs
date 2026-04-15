@@ -352,7 +352,10 @@ pub fn select_32k_source(source: Clock32kSource) {
         Clock32kSource::InternalRc => vendor_cpu_sleep_wakeup_32k_rc as *const () as usize,
         Clock32kSource::ExternalCrystal => vendor_cpu_sleep_wakeup_32k_xtal as *const () as usize,
     };
-    let check_32k_handler = 0usize;
+    let check_32k_handler = match source {
+        Clock32kSource::InternalRc => 0usize,
+        Clock32kSource::ExternalCrystal => startup::check_32k_clk_stable as *const () as usize,
+    };
 
     startup::set_pm_tim_recover_handler(recover);
     startup::set_cpu_sleep_wakeup_handler(sleep);
@@ -496,7 +499,7 @@ fn long_sleep_wakeup_impl(
     let source = current_32k_source();
     let wakeup_tick = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k);
 
-    if source == Clock32kSource::InternalRc {
+    if !mode.is_suspend() {
         return unsafe {
             vendor_pm_long_sleep_wakeup(
                 mode.raw() as u32,
@@ -504,19 +507,6 @@ fn long_sleep_wakeup_impl(
                 wakeup_duration_ticks_32k,
             )
         };
-    }
-    if source == Clock32kSource::ExternalCrystal && matches!(mode, SleepMode::DeepSleep) {
-        // Compatibility fallback: XTAL deep sleep path is unstable on current HW/SDK mix.
-        // Sleep on RC and restore selected source on return.
-        select_32k_source(Clock32kSource::InternalRc);
-        let rc_ticks = ((wakeup_duration_ticks_32k as u64) * (RC_32K_HZ as u64) / (XTAL_32K_HZ as u64))
-            .max(1)
-            .min(u32::MAX as u64) as u32;
-        let status = unsafe {
-            vendor_pm_long_sleep_wakeup(mode.raw() as u32, wakeup_src.raw() as u32, rc_ticks)
-        };
-        select_32k_source(source);
-        return status;
     }
     sleep_impl(mode, wakeup_src, wakeup_tick, source, true)
 }

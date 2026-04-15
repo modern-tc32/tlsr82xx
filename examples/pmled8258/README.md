@@ -4,17 +4,15 @@ Power-management example for TLSR8258 in Rust: `sleep -> wake -> blink -> sleep`
 
 ## Current behavior
 
-- 32k source: external crystal (`ExternalCrystal`).
+- 32k source requested by example: external crystal (`ExternalCrystal`).
 - Sleep source: TIMER.
 - Sleep duration: 2 seconds.
-- Sleep modes: cycles in this order:
-  - `DeepSleepRetentionLow8K` (marker: `6` yellow blinks)
-  - `DeepSleepRetentionLow16K` (marker: `4` yellow blinks)
-  - `DeepSleepRetentionLow32K` (marker: `5` yellow blinks)
+- Sleep mode: `DeepSleep` (marker: `2` yellow blinks).
+- `pm::long_sleep_32k(...)` is used in the example.
 - LED indication:
   - startup debug: white blinks show startup wakeup-flag bucket.
   - short yellow pulse at active window start.
-  - mode marker pulse train (`6/4/5`) after that.
+  - mode marker pulse train (`2`) after that.
 
 ## Retention diagnostics
 

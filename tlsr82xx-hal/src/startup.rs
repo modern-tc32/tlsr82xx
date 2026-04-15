@@ -338,6 +338,7 @@ pub extern "C" fn __tc32_efuse_delay() {
 }
 
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".ram_code.check_32k_clk_stable")]
 pub extern "C" fn check_32k_clk_stable() {
     pm_wait_xtal_ready();
 }
