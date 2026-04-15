@@ -171,11 +171,6 @@ fn diag_record_startup() {
 }
 
 #[inline(always)]
-fn diag_next_mode() -> u32 {
-    unsafe { core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE) }
-}
-
-#[inline(always)]
 fn diag_before_sleep(mode: pm::SleepMode) {
     unsafe {
         core::ptr::write_volatile(&raw mut PM_DIAG_LAST_SLEEP_MODE, mode as u32);

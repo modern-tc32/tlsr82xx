@@ -178,12 +178,6 @@ unsafe extern "C" {
         wakeup_src: u32,
         wakeup_duration_ticks_32k: u32,
     ) -> i32;
-    #[link_name = "cpu_long_sleep_wakeup_32k_xtal"]
-    fn vendor_cpu_long_sleep_wakeup_32k_xtal(
-        mode: u32,
-        wakeup_src: u32,
-        wakeup_duration_ticks_32k: u32,
-    ) -> i32;
 }
 
 #[inline(always)]
@@ -191,7 +185,7 @@ pub fn init(source: Clock32kSource) {
     #[cfg(feature = "chip-8258")]
     if source == Clock32kSource::InternalRc {
         // Vendor clock_32k_init(0) path: switch 32k mux to internal RC.
-        let mut clk32k_sel = analog::read(0x2d) & 0x7f;
+        let clk32k_sel = analog::read(0x2d) & 0x7f;
         analog::write(0x2d, clk32k_sel);
         let mut pm32k_ctrl = analog::read(0x05) & !0x03;
         pm32k_ctrl |= 0x02;
