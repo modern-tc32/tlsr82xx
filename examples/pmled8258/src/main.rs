@@ -10,7 +10,6 @@ use tlsr82xx_hal::{clock, interrupt, pac, pm, startup, timer};
 mod platform;
 
 const SLEEP_MS: u32 = 2_000;
-const XTAL_32K_HZ: u32 = 32_768;
 const WAKE_BLINK_US: u32 = 260_000;
 const MODE_BLINK_US: u32 = 360_000;
 const STARTUP_BLINK_US: u32 = 220_000;
@@ -44,7 +43,8 @@ pub extern "C" fn main() -> i32 {
     let _ = platform::init();
     clock::init(clock::SysClock::Crystal16M);
     pm::sync_sys_tick_per_us();
-    pm::init(pm::Clock32kSource::ExternalCrystal);
+    // pm::init(pm::Clock32kSource::ExternalCrystal);
+    pm::init(pm::Clock32kSource::InternalRc);
     let _ = interrupt::enable();
     diag_record_startup();
 
@@ -61,18 +61,10 @@ pub extern "C" fn main() -> i32 {
         let mode_blinks = last_mode_blink_count();
         blink_n(&mut board.led_y, mode_blinks, MODE_BLINK_US);
 
-        let mode = match diag_next_mode() % 3 {
-            0 => pm::SleepMode::DeepSleepRetentionLow8K,
-            1 => pm::SleepMode::DeepSleepRetentionLow16K,
-            _ => pm::SleepMode::DeepSleepRetentionLow32K,
-        };
+        let mode = pm::SleepMode::DeepSleep;
         diag_before_sleep(mode);
 
-        let _ = pm::long_sleep_32k(
-            mode,
-            pm::WakeupSource::TIMER,
-            (SLEEP_MS.saturating_mul(XTAL_32K_HZ)) / 1000,
-        );
+        let _ = pm::sleep_for_ms(mode, pm::WakeupSource::TIMER, SLEEP_MS);
     }
 }
 
@@ -121,8 +113,8 @@ fn blink_startup_debug(board: &mut Board) {
 
 fn last_mode_blink_count() -> u8 {
     let last = unsafe { core::ptr::read_volatile(&raw const PM_DIAG_LAST_SLEEP_MODE) as u8 };
-    if last == pm::SleepMode::DeepSleepRetentionLow8K as u8 {
-        6
+    if last == pm::SleepMode::DeepSleep as u8 {
+        2
     } else if last == pm::SleepMode::DeepSleepRetentionLow16K as u8 {
         4
     } else if last == pm::SleepMode::DeepSleepRetentionLow32K as u8 {
@@ -182,9 +174,7 @@ fn diag_next_mode() -> u32 {
 fn diag_before_sleep(mode: pm::SleepMode) {
     unsafe {
         core::ptr::write_volatile(&raw mut PM_DIAG_LAST_SLEEP_MODE, mode as u32);
-        let next = core::ptr::read_volatile(&raw const PM_DIAG_NEXT_MODE)
-            .wrapping_add(1)
-            % 3;
+        let next = 0;
         core::ptr::write_volatile(&raw mut PM_DIAG_NEXT_MODE, next);
         let loops = core::ptr::read_volatile(&raw const PM_DIAG_LOOP_COUNT).wrapping_add(1);
         core::ptr::write_volatile(&raw mut PM_DIAG_LOOP_COUNT, loops);

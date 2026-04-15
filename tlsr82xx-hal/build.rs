@@ -5,7 +5,6 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-env-changed=TC32_LLVM_BIN");
     println!("cargo:rerun-if-env-changed=TC32_AR");
-    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_VENDOR_PM");
 
     if env::var_os("CARGO_FEATURE_CHIP_8258").is_none() {
         return;
@@ -55,45 +54,35 @@ fn main() {
         objects.push(compile_asm(&clang, &asm_flags, &irq_handler, &object_dir));
     }
 
-    if env::var_os("CARGO_FEATURE_VENDOR_PM").is_some() {
-        if objects.is_empty() {
-            let vendor_pm_rc = workspace_root
-                .parent()
-                .expect("repo root")
-                .join("drivers/pm_32k_rc.o");
-            if !vendor_pm_rc.exists() {
-                return;
-            }
+    if objects.is_empty() {
+        let vendor_pm_rc = workspace_root.parent().expect("repo root").join("drivers/pm_32k_rc.o");
+        if !vendor_pm_rc.exists() {
+            return;
+        }
+        println!("cargo:rerun-if-changed={}", vendor_pm_rc.display());
+        objects.push(vendor_pm_rc);
+        let vendor_pm_xtal = workspace_root
+            .parent()
+            .expect("repo root")
+            .join("drivers/pm_32k_xtal.o");
+        if vendor_pm_xtal.exists() {
+            println!("cargo:rerun-if-changed={}", vendor_pm_xtal.display());
+            objects.push(vendor_pm_xtal);
+        }
+    } else {
+        let vendor_pm_rc = workspace_root.parent().expect("repo root").join("drivers/pm_32k_rc.o");
+        if vendor_pm_rc.exists() {
             println!("cargo:rerun-if-changed={}", vendor_pm_rc.display());
             objects.push(vendor_pm_rc);
-            let vendor_pm_xtal = workspace_root
-                .parent()
-                .expect("repo root")
-                .join("drivers/pm_32k_xtal.o");
-            if vendor_pm_xtal.exists() {
-                println!("cargo:rerun-if-changed={}", vendor_pm_xtal.display());
-                objects.push(vendor_pm_xtal);
-            }
-        } else {
-            let vendor_pm_rc = workspace_root
-                .parent()
-                .expect("repo root")
-                .join("drivers/pm_32k_rc.o");
-            if vendor_pm_rc.exists() {
-                println!("cargo:rerun-if-changed={}", vendor_pm_rc.display());
-                objects.push(vendor_pm_rc);
-            }
-            let vendor_pm_xtal = workspace_root
-                .parent()
-                .expect("repo root")
-                .join("drivers/pm_32k_xtal.o");
-            if vendor_pm_xtal.exists() {
-                println!("cargo:rerun-if-changed={}", vendor_pm_xtal.display());
-                objects.push(vendor_pm_xtal);
-            }
         }
-    } else if objects.is_empty() {
-        return;
+        let vendor_pm_xtal = workspace_root
+            .parent()
+            .expect("repo root")
+            .join("drivers/pm_32k_xtal.o");
+        if vendor_pm_xtal.exists() {
+            println!("cargo:rerun-if-changed={}", vendor_pm_xtal.display());
+            objects.push(vendor_pm_xtal);
+        }
     }
 
     let lib_name = "tlsr82xx_hal_irq_asm_8258";

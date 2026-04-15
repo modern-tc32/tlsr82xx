@@ -62,6 +62,14 @@ pub struct PmRDelayUs {
     pub suspend_ret_r_delay_us: u16,
 }
 
+#[repr(C, align(4))]
+pub struct MiscPara {
+    pub ext_cap_en: u8,
+    pub pad32k_en: u8,
+    pub pm_enter_en: u8,
+    pub _reserved: u8,
+}
+
 const MCU_STATUS_BOOT: u8 = 0;
 const MCU_STATUS_DEEPRET_BACK: u8 = 1;
 const MCU_STATUS_DEEP_BACK: u8 = 2;
@@ -106,7 +114,18 @@ pub static mut func_before_suspend: usize = 0;
 pub static mut cpu_sleep_wakeup: usize = 0;
 
 #[unsafe(no_mangle)]
+pub static mut pm_check_32k_clk_stable: usize = 0;
+
+#[unsafe(no_mangle)]
 pub static mut tl_multi_addr: u8 = 0;
+
+#[unsafe(no_mangle)]
+pub static mut blt_miscParam: MiscPara = MiscPara {
+    ext_cap_en: 0,
+    pad32k_en: 0,
+    pm_enter_en: 0,
+    _reserved: 0,
+};
 
 #[unsafe(no_mangle)]
 pub static mut tick_32k_calib: u16 = 0;
@@ -316,6 +335,11 @@ pub extern "C" fn __tc32_efuse_delay() {
     for _ in 0..110u32 {
         core::hint::spin_loop();
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn check_32k_clk_stable() {
+    pm_wait_xtal_ready();
 }
 
 #[unsafe(no_mangle)]
@@ -944,6 +968,27 @@ pub fn set_pm_tim_recover_handler(handler: usize) {
 pub fn set_cpu_sleep_wakeup_handler(handler: usize) {
     unsafe {
         core::ptr::write_volatile(&raw mut cpu_sleep_wakeup, handler);
+    }
+}
+
+#[inline(always)]
+pub fn set_pm_check_32k_clk_stable_handler(handler: usize) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut pm_check_32k_clk_stable, handler);
+    }
+}
+
+#[inline(always)]
+pub fn set_misc_pad32k_enabled(enabled: bool) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut blt_miscParam.pad32k_en, enabled as u8);
+    }
+}
+
+#[inline(always)]
+pub fn set_misc_pm_enter_enabled(enabled: bool) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut blt_miscParam.pm_enter_en, enabled as u8);
     }
 }
 
