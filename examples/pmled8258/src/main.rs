@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 
 use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::{clock, interrupt, pac, pm, timer};
+use tlsr82xx_hal::{clock, interrupt, pac, pm, startup, timer};
 
 mod platform;
 
@@ -17,6 +17,7 @@ const LONG_PULSE_US: u32 = 240_000;
 const SHORT_PULSE_US: u32 = 130_000;
 const SERIES_GAP_US: u32 = 500_000;
 const PRE_SLEEP_GAP_US: u32 = 1_000_000;
+const FIRST_START_MARK_US: u32 = 3_000_000;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SleepApi {
@@ -80,11 +81,13 @@ static mut LAST_MODE_RAW: u8 = 0;
 #[unsafe(no_mangle)]
 static mut LAST_CLOCK_RAW: u8 = 0;
 #[unsafe(no_mangle)]
-static mut LAST_API_RAW: u8 = 0;
+static mut LAST_TEST_INDEX_RAW: u8 = 0;
 #[unsafe(no_mangle)]
 static mut NEXT_TEST_INDEX: u8 = 0;
 #[unsafe(no_mangle)]
 static mut WAS_INITIALIZED: u8 = 0;
+#[unsafe(no_mangle)]
+static mut FORCE_COLD_BOOT_DISPLAY_ONCE: u8 = 0;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
@@ -102,27 +105,33 @@ pub extern "C" fn main() -> i32 {
         unsafe {
             WAS_INITIALIZED = 1;
             NEXT_TEST_INDEX = 0;
+            FORCE_COLD_BOOT_DISPLAY_ONCE = 1;
         }
+        drive_pin(&mut board.led_w, true);
+        drive_pin(&mut board.led_y, true);
+        delay_us(FIRST_START_MARK_US);
+        drive_pin(&mut board.led_w, false);
+        drive_pin(&mut board.led_y, false);
+        delay_us(SERIES_GAP_US);
     }
 
     loop {
         indicate_startup_state(&mut board);
+        indicate_startup_wakeup_flag(&mut board);
         indicate_last_clock(&mut board);
-        indicate_last_api(&mut board);
+        indicate_last_step(&mut board);
         delay_us(PRE_SLEEP_GAP_US);
 
-        let case = TESTS[unsafe { NEXT_TEST_INDEX as usize % TESTS.len() }];
+        let idx = unsafe { NEXT_TEST_INDEX as usize % TESTS.len() };
+        let case = TESTS[idx];
         let next = (unsafe { NEXT_TEST_INDEX as usize } + 1) % TESTS.len();
         unsafe {
             NEXT_TEST_INDEX = next as u8;
+            LAST_TEST_INDEX_RAW = idx as u8;
             LAST_MODE_RAW = case.mode.raw();
             LAST_CLOCK_RAW = match case.clock {
                 pm::Clock32kSource::InternalRc => 1,
                 pm::Clock32kSource::ExternalCrystal => 2,
-            };
-            LAST_API_RAW = match case.api {
-                SleepApi::SleepForMs => 1,
-                SleepApi::LongSleep32k => 2,
             };
         }
 
@@ -151,6 +160,20 @@ pub extern "C" fn main() -> i32 {
 }
 
 fn indicate_startup_state(board: &mut Board) {
+    let force_cold_boot = unsafe {
+        if FORCE_COLD_BOOT_DISPLAY_ONCE != 0 {
+            FORCE_COLD_BOOT_DISPLAY_ONCE = 0;
+            true
+        } else {
+            false
+        }
+    };
+
+    if force_cold_boot {
+        blink_n(&mut board.led_w, 1, LONG_PULSE_US);
+        return;
+    }
+
     let count = match pm::wake_origin() {
         pm::WakeOrigin::ColdBoot => {
             let last = unsafe { LAST_MODE_RAW };
@@ -177,6 +200,19 @@ fn indicate_startup_state(board: &mut Board) {
     blink_n(&mut board.led_w, count, LONG_PULSE_US);
 }
 
+fn indicate_startup_wakeup_flag(board: &mut Board) {
+    delay_us(SERIES_GAP_US);
+    let wakeup_flag = unsafe { startup::PM_STARTUP_DBG_WAKEUP_FLAG };
+    let count = if wakeup_flag == 0 {
+        1
+    } else if wakeup_flag == 1 {
+        2
+    } else {
+        3
+    };
+    blink_n(&mut board.led_w, count, SHORT_PULSE_US);
+}
+
 fn indicate_last_clock(board: &mut Board) {
     delay_us(SERIES_GAP_US);
     let count = unsafe { LAST_CLOCK_RAW };
@@ -184,11 +220,10 @@ fn indicate_last_clock(board: &mut Board) {
     blink_n(&mut board.led_y, count, LONG_PULSE_US);
 }
 
-fn indicate_last_api(board: &mut Board) {
+fn indicate_last_step(board: &mut Board) {
     delay_us(SERIES_GAP_US);
-    let count = unsafe { LAST_API_RAW };
-    let count = if count == 0 { 2 } else { count };
-    blink_n(&mut board.led_w, count, SHORT_PULSE_US);
+    let count = unsafe { LAST_TEST_INDEX_RAW.wrapping_add(1) };
+    blink_n_custom(&mut board.led_y, count, SHORT_PULSE_US, SHORT_PULSE_US.saturating_mul(2));
 }
 
 fn drive_pin<P: OutputPin>(pin: &mut P, high: bool) {
@@ -203,12 +238,16 @@ fn delay_us(duration_us: u32) {
 }
 
 fn blink_n<P: OutputPin>(pin: &mut P, count: u8, pulse_us: u32) {
+    blink_n_custom(pin, count, pulse_us, pulse_us);
+}
+
+fn blink_n_custom<P: OutputPin>(pin: &mut P, count: u8, on_us: u32, off_us: u32) {
     let mut i = 0u8;
     while i < count {
         drive_pin(pin, true);
-        delay_us(pulse_us);
+        delay_us(on_us);
         drive_pin(pin, false);
-        delay_us(pulse_us);
+        delay_us(off_us);
         i = i.wrapping_add(1);
     }
 }
