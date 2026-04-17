@@ -14,7 +14,6 @@ members = [
   "examples/radio_selftest8258",
   "examples/rgb8258",
   "examples/pmled8258",
-  "examples/pmled8258_sleep_for_ms",
   "examples/pmled8258_sleep_for_ms_vendor_probe",
   "examples/spi8258",
   "examples/stimerirq8258",

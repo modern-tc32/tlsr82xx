@@ -94,7 +94,7 @@ pub extern "C" fn main() -> i32 {
     let _ = platform::init();
     clock::init(clock::SysClock::Crystal16M);
     pm::sync_sys_tick_per_us();
-    pm::init(pm::Clock32kSource::ExternalCrystal);
+    pm::Pm::init(pm::Clock32kSource::ExternalCrystal);
     let _ = interrupt::enable();
 
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
@@ -135,21 +135,18 @@ pub extern "C" fn main() -> i32 {
             };
         }
 
-        match case.clock {
-            pm::Clock32kSource::InternalRc => pm::pm_select_internal_32k_rc(),
-            pm::Clock32kSource::ExternalCrystal => pm::pm_select_external_32k_crystal(),
-        }
+        pm::Pm::init(case.clock);
 
         match case.api {
             SleepApi::SleepForMs => {
-                let _ = pm::sleep_for_ms(case.mode, pm::WakeupSource::TIMER, SLEEP_MS);
+                let _ = pm::Pm::sleep_for_ms(case.mode, pm::WakeupSource::TIMER, SLEEP_MS);
             }
             SleepApi::LongSleep32k => {
                 let hz = match case.clock {
                     pm::Clock32kSource::InternalRc => RC_32K_HZ,
                     pm::Clock32kSource::ExternalCrystal => XTAL_32K_HZ,
                 };
-                let _ = pm::long_sleep_32k(
+                let _ = pm::Pm::long_sleep_32k(
                     case.mode,
                     pm::WakeupSource::TIMER,
                     (SLEEP_MS.saturating_mul(hz)) / 1000,
