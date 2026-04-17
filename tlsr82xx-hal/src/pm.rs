@@ -701,21 +701,21 @@ fn long_sleep_wakeup_impl(
     wakeup_src: WakeupSource,
     wakeup_duration_ticks_32k: u32,
 ) -> i32 {
-    let wakeup_tick_32k = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k.max(1));
     if !mode.is_suspend() {
         return match current_32k_source() {
             Clock32kSource::InternalRc => pm_long_sleep_wakeup(
                 mode.raw() as u32,
                 wakeup_src.raw() as u32,
-                wakeup_tick_32k,
+                wakeup_duration_ticks_32k,
             ),
             Clock32kSource::ExternalCrystal => cpu_long_sleep_wakeup_32k_xtal(
                 mode.raw() as u32,
                 wakeup_src.raw() as u32,
-                wakeup_tick_32k,
+                wakeup_duration_ticks_32k,
             ),
         };
     }
+    let wakeup_tick_32k = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k.max(1));
     let source = current_32k_source();
     sleep_impl(mode, wakeup_src, wakeup_tick_32k, source, true)
 }

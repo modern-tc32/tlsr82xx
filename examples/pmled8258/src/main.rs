@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 
 use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::{clock, interrupt, pac, pm, startup, timer};
+use tlsr82xx_hal::{analog, clock, interrupt, pac, pm, startup, timer};
 
 mod platform;
 
@@ -18,6 +18,9 @@ const SHORT_PULSE_US: u32 = 130_000;
 const SERIES_GAP_US: u32 = 500_000;
 const PRE_SLEEP_GAP_US: u32 = 1_000_000;
 const FIRST_START_MARK_US: u32 = 3_000_000;
+const ANA_PERSIST_STEP_REG: u8 = 0x3a;
+const ANA_PERSIST_MAGIC_MASK: u8 = 0xF0;
+const ANA_PERSIST_MAGIC_VALUE: u8 = 0xA0;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum SleepApi {
@@ -128,6 +131,8 @@ static mut DBG_TICK_32K_CUR: u32 = 0;
 static mut DBG_TICK_32K_CALIB: u16 = 0;
 #[unsafe(no_mangle)]
 static mut DBG_ERR: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_PERSIST_RAW: u8 = 0;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
@@ -145,17 +150,30 @@ pub extern "C" fn main() -> i32 {
     drive_pin(&mut board.led_y, false);
 
     if unsafe { WAS_INITIALIZED } == 0 {
+        let persisted = load_persisted_step();
+        dbg_u8(&raw mut DBG_PERSIST_RAW, persisted);
+        let has_magic = (persisted & ANA_PERSIST_MAGIC_MASK) == ANA_PERSIST_MAGIC_VALUE;
+        let persisted_idx = persisted & 0x0f;
         unsafe {
             WAS_INITIALIZED = 1;
-            NEXT_TEST_INDEX = 0;
-            FORCE_COLD_BOOT_DISPLAY_ONCE = 1;
+            NEXT_TEST_INDEX = if has_magic {
+                persisted_idx % (TESTS.len() as u8)
+            } else {
+                0
+            };
+            FORCE_COLD_BOOT_DISPLAY_ONCE = if has_magic { 0 } else { 1 };
         }
-        drive_pin(&mut board.led_w, true);
-        drive_pin(&mut board.led_y, true);
-        delay_us(FIRST_START_MARK_US);
-        drive_pin(&mut board.led_w, false);
-        drive_pin(&mut board.led_y, false);
-        delay_us(SERIES_GAP_US);
+        if !has_magic {
+            persist_step(0);
+        }
+        if !has_magic {
+            drive_pin(&mut board.led_w, true);
+            drive_pin(&mut board.led_y, true);
+            delay_us(FIRST_START_MARK_US);
+            drive_pin(&mut board.led_w, false);
+            drive_pin(&mut board.led_y, false);
+            delay_us(SERIES_GAP_US);
+        }
     }
 
     loop {
@@ -192,6 +210,7 @@ pub extern "C" fn main() -> i32 {
                 pm::Clock32kSource::ExternalCrystal => 2,
             };
         }
+        persist_step(next as u8);
         dbg_u8(&raw mut DBG_CASE_CUR, idx as u8);
         dbg_u8(&raw mut DBG_CASE_NEXT, next as u8);
         dbg_u8(&raw mut DBG_MODE_RAW, case.mode.raw());
@@ -343,6 +362,19 @@ fn dbg_inc(slot: *mut u32) {
         let v = core::ptr::read_volatile(slot.cast_const());
         core::ptr::write_volatile(slot, v.wrapping_add(1));
     }
+}
+
+#[inline(always)]
+fn load_persisted_step() -> u8 {
+    analog::read(ANA_PERSIST_STEP_REG)
+}
+
+#[inline(always)]
+fn persist_step(next: u8) {
+    analog::write(
+        ANA_PERSIST_STEP_REG,
+        ANA_PERSIST_MAGIC_VALUE | (next & 0x0f),
+    );
 }
 
 fn blink_n<P: OutputPin>(pin: &mut P, count: u8, pulse_us: u32) {
