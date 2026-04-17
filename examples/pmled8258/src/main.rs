@@ -88,13 +88,56 @@ static mut NEXT_TEST_INDEX: u8 = 0;
 static mut WAS_INITIALIZED: u8 = 0;
 #[unsafe(no_mangle)]
 static mut FORCE_COLD_BOOT_DISPLAY_ONCE: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_STAGE: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_LOOP_CNT: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_CASE_CUR: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_CASE_NEXT: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_CASE_COUNT: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_WAKE_ORIGIN: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_WAKE_FLAG: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_WAKE_SRC_RAW: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_IS_PAD_WAKE: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_MODE_RAW: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_CLOCK_RAW: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_NOW_TICK: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_TPU: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_WAKEUP_TICK: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_LAST_RET: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_PM_LONG_SUSPEND: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_TICK_CUR: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_TICK_32K_CUR: u32 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_TICK_32K_CALIB: u16 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_ERR: u32 = 0;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
+    dbg_u32(&raw mut DBG_STAGE, 0x01);
     let _ = platform::init();
+    dbg_u32(&raw mut DBG_STAGE, 0x02);
     clock::init(clock::SysClock::Crystal16M);
     pm::sync_sys_tick_per_us();
     pm::Pm::init(pm::Clock32kSource::ExternalCrystal);
+    dbg_u32(&raw mut DBG_STAGE, 0x03);
     let _ = interrupt::enable();
 
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
@@ -116,6 +159,21 @@ pub extern "C" fn main() -> i32 {
     }
 
     loop {
+        dbg_inc(&raw mut DBG_LOOP_CNT);
+        dbg_u32(&raw mut DBG_STAGE, 0x10);
+        dbg_u8(
+            &raw mut DBG_WAKE_ORIGIN,
+            match pm::wake_origin() {
+                pm::WakeOrigin::ColdBoot => 1,
+                pm::WakeOrigin::DeepWake => 2,
+                pm::WakeOrigin::DeepRetentionWake => 3,
+            },
+        );
+        dbg_u8(&raw mut DBG_WAKE_FLAG, unsafe {
+            startup::PM_STARTUP_DBG_WAKEUP_FLAG
+        });
+        dbg_u8(&raw mut DBG_WAKE_SRC_RAW, pm::wakeup_source_raw());
+        dbg_u8(&raw mut DBG_IS_PAD_WAKE, pm::is_pad_wakeup() as u8);
         indicate_startup_state(&mut board);
         indicate_startup_wakeup_flag(&mut board);
         indicate_last_clock(&mut board);
@@ -134,25 +192,56 @@ pub extern "C" fn main() -> i32 {
                 pm::Clock32kSource::ExternalCrystal => 2,
             };
         }
+        dbg_u8(&raw mut DBG_CASE_CUR, idx as u8);
+        dbg_u8(&raw mut DBG_CASE_NEXT, next as u8);
+        dbg_u8(&raw mut DBG_MODE_RAW, case.mode.raw());
+        dbg_u8(
+            &raw mut DBG_CLOCK_RAW,
+            match case.clock {
+                pm::Clock32kSource::InternalRc => 1,
+                pm::Clock32kSource::ExternalCrystal => 2,
+            },
+        );
+        dbg_inc(&raw mut DBG_CASE_COUNT);
 
+        dbg_u32(&raw mut DBG_STAGE, 0x20);
         pm::Pm::init(case.clock);
+        dbg_u32(&raw mut DBG_STAGE, 0x21);
+        let now = timer::clock_time();
+        let tpu = timer::sys_tick_per_us();
+        dbg_u32(&raw mut DBG_NOW_TICK, now);
+        dbg_u32(&raw mut DBG_TPU, tpu);
+        dbg_u32(
+            &raw mut DBG_WAKEUP_TICK,
+            now.wrapping_add(SLEEP_MS.saturating_mul(1000).saturating_mul(tpu)),
+        );
+        unsafe {
+            DBG_PM_LONG_SUSPEND = startup::pm_long_suspend;
+            DBG_TICK_CUR = startup::tick_cur;
+            DBG_TICK_32K_CUR = startup::tick_32k_cur;
+            DBG_TICK_32K_CALIB = startup::tick_32k_calib;
+        }
 
+        dbg_u32(&raw mut DBG_STAGE, 0x30);
         match case.api {
             SleepApi::SleepForMs => {
-                let _ = pm::Pm::sleep_for_ms(case.mode, pm::WakeupSource::TIMER, SLEEP_MS);
+                let ret = pm::Pm::sleep_for_ms(case.mode, pm::WakeupSource::TIMER, SLEEP_MS);
+                dbg_u32(&raw mut DBG_LAST_RET, ret.raw);
             }
             SleepApi::LongSleep32k => {
                 let hz = match case.clock {
                     pm::Clock32kSource::InternalRc => RC_32K_HZ,
                     pm::Clock32kSource::ExternalCrystal => XTAL_32K_HZ,
                 };
-                let _ = pm::Pm::long_sleep_32k(
+                let ret = pm::Pm::long_sleep_32k(
                     case.mode,
                     pm::WakeupSource::TIMER,
                     (SLEEP_MS.saturating_mul(hz)) / 1000,
                 );
+                dbg_u32(&raw mut DBG_LAST_RET, ret.raw);
             }
         }
+        dbg_u32(&raw mut DBG_STAGE, 0x40);
     }
 }
 
@@ -231,6 +320,28 @@ fn delay_us(duration_us: u32) {
     let started = timer::clock_time();
     while !timer::clock_time_exceed_us(started, duration_us) {
         core::hint::spin_loop();
+    }
+}
+
+#[inline(always)]
+fn dbg_u32(slot: *mut u32, value: u32) {
+    unsafe {
+        core::ptr::write_volatile(slot, value);
+    }
+}
+
+#[inline(always)]
+fn dbg_u8(slot: *mut u8, value: u8) {
+    unsafe {
+        core::ptr::write_volatile(slot, value);
+    }
+}
+
+#[inline(always)]
+fn dbg_inc(slot: *mut u32) {
+    unsafe {
+        let v = core::ptr::read_volatile(slot.cast_const());
+        core::ptr::write_volatile(slot, v.wrapping_add(1));
     }
 }
 

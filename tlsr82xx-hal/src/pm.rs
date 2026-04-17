@@ -1,4 +1,4 @@
-use crate::{analog, gpio, startup, timer};
+use crate::{analog, gpio, interrupt, startup, timer};
 
 #[cfg(feature = "chip-8258")]
 use crate::mmio::{reg16, reg32, reg8};
@@ -16,6 +16,8 @@ const PM_WAKEUP_PAD_BITS: u8 = 1 << 4;
 const PM_WAKEUP_CORE_BITS: u8 = 1 << 5;
 const PM_WAKEUP_TIMER_BITS: u8 = 1 << 6;
 const PM_WAKEUP_COMPARATOR_BITS: u8 = 1 << 7;
+const WAKEUP_STATUS_ALL: u8 = 0x0f;
+const CRYSTAL32768_TICK_PER_32CYCLE: u32 = 15625;
 
 pub const WAKEUP_STATUS_COMPARATOR: u32 = 1 << 0;
 pub const WAKEUP_STATUS_TIMER: u32 = 1 << 1;
@@ -647,22 +649,50 @@ fn sleep_impl(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn pm_tim_recover_32k_rc(now_tick_32k: u32) -> u32 {
-    pm_tim_recover_impl(now_tick_32k, Clock32kSource::InternalRc)
+    unsafe {
+        let deep_ret_tick = if startup::pm_long_suspend != 0 {
+            startup::tick_cur.wrapping_add(
+                now_tick_32k
+                    .wrapping_sub(startup::tick_32k_cur)
+                    .wrapping_div(16)
+                    .wrapping_mul(startup::tick_32k_calib as u32),
+            )
+        } else {
+            startup::tick_cur.wrapping_add(
+                now_tick_32k
+                    .wrapping_sub(startup::tick_32k_cur)
+                    .wrapping_mul(startup::tick_32k_calib as u32)
+                    .wrapping_div(16),
+            )
+        };
+        startup::tick_cur = deep_ret_tick;
+        startup::tick_32k_cur = now_tick_32k;
+        deep_ret_tick
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn pm_tim_recover_32k_xtal(now_tick_32k: u32) -> u32 {
-    pm_tim_recover_impl(now_tick_32k, Clock32kSource::ExternalCrystal)
-}
-
-fn pm_tim_recover_impl(now_tick_32k: u32, source: Clock32kSource) -> u32 {
-    let prev_32k = startup::current_tick_32k_cur();
-    let prev_sys = startup::current_tick_cur();
-    let delta_32k = now_tick_32k.wrapping_sub(prev_32k);
-    let recovered = prev_sys.wrapping_add(ticks_32k_to_sys_ticks(delta_32k, source));
-    startup::set_tick_32k_cur(now_tick_32k);
-    startup::set_tick_cur(recovered);
-    recovered
+    unsafe {
+        let deep_ret_tick = if startup::pm_long_suspend != 0 {
+            startup::tick_cur.wrapping_add(
+                now_tick_32k
+                    .wrapping_sub(startup::tick_32k_cur)
+                    .wrapping_div(32)
+                    .wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE),
+            )
+        } else {
+            startup::tick_cur.wrapping_add(
+                now_tick_32k
+                    .wrapping_sub(startup::tick_32k_cur)
+                    .wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE)
+                    .wrapping_div(32),
+            )
+        };
+        startup::tick_cur = deep_ret_tick;
+        startup::tick_32k_cur = now_tick_32k;
+        deep_ret_tick
+    }
 }
 
 #[inline(always)]
@@ -671,23 +701,23 @@ fn long_sleep_wakeup_impl(
     wakeup_src: WakeupSource,
     wakeup_duration_ticks_32k: u32,
 ) -> i32 {
+    let wakeup_tick_32k = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k.max(1));
     if !mode.is_suspend() {
         return match current_32k_source() {
             Clock32kSource::InternalRc => pm_long_sleep_wakeup(
                 mode.raw() as u32,
                 wakeup_src.raw() as u32,
-                wakeup_duration_ticks_32k,
+                wakeup_tick_32k,
             ),
             Clock32kSource::ExternalCrystal => cpu_long_sleep_wakeup_32k_xtal(
                 mode.raw() as u32,
                 wakeup_src.raw() as u32,
-                wakeup_duration_ticks_32k,
+                wakeup_tick_32k,
             ),
         };
     }
     let source = current_32k_source();
-    let wakeup_tick = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k);
-    sleep_impl(mode, wakeup_src, wakeup_tick, source, true)
+    sleep_impl(mode, wakeup_src, wakeup_tick_32k, source, true)
 }
 
 #[cfg(feature = "chip-8258")]
@@ -723,14 +753,143 @@ pub extern "C" fn pm_long_sleep_wakeup(
     wakeup_src: u32,
     wakeup_duration_ticks_32k: u32,
 ) -> i32 {
-    let wakeup_tick = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k);
-    sleep_impl(
-        decode_mode(mode),
-        WakeupSource(wakeup_src as u8),
-        wakeup_tick,
-        Clock32kSource::InternalRc,
-        true,
-    )
+    let sleep_mode = decode_mode(mode);
+    let wakeup_src_u8 = wakeup_src as u8;
+    let irq_enabled = interrupt::disable();
+    let start_tick = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+    unsafe {
+        startup::tick_32k_calib = core::ptr::read_volatile(reg16(0x0080_0750).cast_const());
+    }
+    let has_timer = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
+    if has_timer && wakeup_duration_ticks_32k < 0x40 {
+        analog::write(0x44, WAKEUP_STATUS_ALL);
+        let t = wakeup_duration_ticks_32k.wrapping_mul(31);
+        let budget = t.wrapping_mul(4).wrapping_add(wakeup_duration_ticks_32k);
+        let st = loop {
+            let st = analog::read(0x44) & WAKEUP_STATUS_ALL;
+            let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+            if now.wrapping_sub(start_tick) >= budget || st != 0 {
+                break st;
+            }
+        };
+        interrupt::restore(irq_enabled);
+        return st as i32;
+    }
+    unsafe {
+        startup::pm_long_suspend = 0;
+    }
+    let before = unsafe { core::ptr::read_volatile(&raw const startup::func_before_suspend) };
+    if before != 0 {
+        let func: extern "C" fn() -> i32 = unsafe { core::mem::transmute(before) };
+        if func() == 0 {
+            interrupt::restore(irq_enabled);
+            return WAKEUP_STATUS_PAD as i32;
+        }
+    }
+    let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+    unsafe {
+        startup::tick_cur = now.wrapping_add(0x8c << 2);
+        startup::tick_32k_cur = pm_get_32k_tick();
+    }
+    let wakeup_src_u32 = wakeup_src_u8 as u32;
+    let minus64 = wakeup_duration_ticks_32k.wrapping_sub(0x40);
+    analog::write(0x26, wakeup_src_u8);
+    analog::write(0x44, WAKEUP_STATUS_ALL);
+    let bak66 = unsafe { core::ptr::read_volatile(reg8(0x0080_0066).cast_const()) };
+    unsafe {
+        core::ptr::write_volatile(reg8(0x0080_0066), 0);
+    }
+    let sleep_mode_u8 = sleep_mode.raw();
+    let sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
+    let mut an7 = 0u8;
+    let mut v2c_base = 0x16u8;
+    if sleep_mode_no_ret != 0 {
+        let t2 = analog::read(0x02);
+        analog::write(0x02, (t2 & !0x07) | 0x05);
+        unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
+        an7 = 5;
+        v2c_base = 0x56;
+        analog::write(0x2b, 0xde);
+    } else {
+        analog::write(0x04, 0x48);
+        analog::write(0x7e, 0x00);
+        an7 = 4;
+        v2c_base = 0x96;
+        analog::write(0x2b, 0x5e);
+    }
+    analog::write(0x7e, sleep_mode_u8);
+    let cmp = ((wakeup_src_u32 & PM_WAKEUP_COMPARATOR_BITS as u32) != 0) as u8;
+    let any = cmp | (has_timer as u8);
+    analog::write(0x2c, v2c_base | any | (cmp << 3));
+    analog::write(0x07, (analog::read(0x07) & !0x07) | an7);
+    if sleep_mode_no_ret == 0 {
+        unsafe {
+            core::ptr::write_volatile(reg8(0x0080_0602), 0x08);
+        }
+        analog::write(0x7f, 0x01);
+    } else {
+        analog::write(0x7f, 0x00);
+    }
+    unsafe {
+        let half = (startup::tick_32k_calib >> 1) as u32;
+        if sleep_mode_u8 != 0 {
+            analog::write(0x3c, analog::read(0x3c) | 0x02);
+        }
+        let v20 = 0x7f_u32.wrapping_sub((0xfa00_u32.wrapping_add(half)) / startup::tick_32k_calib as u32) as u8;
+        analog::write(0x20, v20);
+        let sr = startup::g_pm_r_delay_us.suspend_ret_r_delay_us as u32;
+        analog::write(0x1f, (((sr << 7).wrapping_add(half)) / startup::tick_32k_calib as u32) as u8);
+        let dt = core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_sub(start_tick);
+        let wake_tick = if startup::pm_long_suspend != 0 {
+            minus64.wrapping_add(startup::tick_cur).wrapping_sub((dt / startup::tick_32k_calib as u32) << 4)
+        } else {
+            minus64
+                .wrapping_add(startup::tick_cur)
+                .wrapping_sub(((dt << 4).wrapping_add((startup::tick_32k_calib >> 1) as u32) / startup::tick_32k_calib as u32))
+        };
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
+        core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x08);
+        while (core::ptr::read_volatile(reg8(0x0080_074f).cast_const()) & 0x08) != 0 {}
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x20);
+    }
+    if (analog::read(0x44) & !WAKEUP_STATUS_ALL) == 0 {
+        sleep_start();
+    }
+    if sleep_mode_u8 != 0 {
+        analog::write(0x3c, analog::read(0x3c) & !0x02);
+        soft_reboot_dly13ms_use24mRC();
+        unsafe { core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x20) };
+    }
+    unsafe {
+        let t32 = pm_get_32k_tick();
+        if startup::pm_long_suspend != 0 {
+            startup::tick_cur = startup::tick_cur.wrapping_add(
+                ((t32.wrapping_sub(startup::tick_32k_cur)) >> 4).wrapping_mul(startup::tick_32k_calib as u32),
+            );
+        } else {
+            startup::tick_cur = startup::tick_cur.wrapping_add(
+                (t32.wrapping_sub(startup::tick_32k_cur))
+                    .wrapping_mul(startup::tick_32k_calib as u32)
+                    >> 4,
+            );
+        }
+        startup::tick_32k_cur = startup::tick_cur.wrapping_add(20 * 16);
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x00);
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x90);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x01);
+    }
+    pm_wait_xtal_ready();
+    unsafe {
+        core::ptr::write_volatile(reg8(0x0080_0066), bak66);
+    }
+    let st = analog::read(0x44);
+    interrupt::restore(irq_enabled);
+    if st != 0 {
+        (st as u32 | STATUS_ENTER_SUSPEND) as i32
+    } else {
+        STATUS_GPIO_ERR_NO_ENTER_PM as i32
+    }
 }
 
 #[cfg(feature = "chip-8258")]
@@ -740,14 +899,146 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     wakeup_src: u32,
     wakeup_duration_ticks_32k: u32,
 ) -> i32 {
-    let wakeup_tick = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k);
-    sleep_impl(
-        decode_mode(mode),
-        WakeupSource(wakeup_src as u8),
-        wakeup_tick,
-        Clock32kSource::ExternalCrystal,
-        true,
-    )
+    let sleep_mode = decode_mode(mode);
+    let wakeup_src_u8 = wakeup_src as u8;
+    let irq_enabled = interrupt::disable();
+    let start = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+    let has_timer = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
+    if has_timer && wakeup_duration_ticks_32k < 0x40 {
+        analog::write(0x44, WAKEUP_STATUS_ALL);
+        let t = wakeup_duration_ticks_32k.wrapping_mul(31);
+        let budget = (((t << 6).wrapping_sub(t)) << 3).wrapping_add(wakeup_duration_ticks_32k) >> 5;
+        let st = loop {
+            let st = analog::read(0x44) & WAKEUP_STATUS_ALL;
+            let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+            if now.wrapping_sub(start) >= budget || st != 0 {
+                break st;
+            }
+        };
+        interrupt::restore(irq_enabled);
+        return st as i32;
+    }
+    unsafe {
+        startup::pm_long_suspend = 0;
+    }
+    let before = unsafe { core::ptr::read_volatile(&raw const startup::func_before_suspend) };
+    if before != 0 {
+        let func: extern "C" fn() -> i32 = unsafe { core::mem::transmute(before) };
+        if func() == 0 {
+            interrupt::restore(irq_enabled);
+            return WAKEUP_STATUS_PAD as i32;
+        }
+    }
+    unsafe {
+        let now = core::ptr::read_volatile(reg32(0x0080_0740).cast_const());
+        startup::tick_cur = now.wrapping_add(0x8c << 2);
+        startup::tick_32k_cur = pm_get_32k_tick();
+    }
+    let wake_m64 = wakeup_duration_ticks_32k.wrapping_sub(0x40);
+    analog::write(0x26, wakeup_src_u8);
+    analog::write(0x44, WAKEUP_STATUS_ALL);
+    let bak66 = unsafe { core::ptr::read_volatile(reg8(0x0080_0066).cast_const()) };
+    unsafe {
+        core::ptr::write_volatile(reg8(0x0080_0066), 0);
+    }
+    let mut sleep_mode_u8 = sleep_mode.raw();
+    let mut sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
+    let mut an7 = 0u8;
+    let mut mode2c = 0x1d_u8;
+    if sleep_mode_no_ret != 0 {
+        let t2 = analog::read(0x02);
+        analog::write(0x02, (t2 & !0x07) | 0x05);
+        unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
+        an7 = 5;
+        mode2c = 0xde;
+        let d = sleep_mode_u8.wrapping_sub(0x80);
+        sleep_mode_u8 = (d | (0u8.wrapping_sub(d))) & 0xff;
+    } else if sleep_mode_u8 == 0 {
+        analog::write(0x04, 0x48);
+        analog::write(0x7e, 0x00);
+        analog::write(0x2b, 0x5e);
+        an7 = 4;
+        mode2c = 0x1d;
+    } else {
+        analog::write(0x7e, 0x80);
+        analog::write(0x2b, 0xde);
+        sleep_mode_no_ret = 1;
+        an7 = 5;
+        mode2c = 0xc0;
+    }
+    let wake_cmp = ((wakeup_src_u8 & PM_WAKEUP_COMPARATOR_BITS) != 0) as u8;
+    if sleep_mode_u8 == 0 {
+        analog::write(
+            0x2c,
+            0x80u8 | wake_cmp | PM_WAKEUP_TIMER_BITS | (wake_cmp << 3),
+        );
+    } else {
+        analog::write(0x2c, 0x16u8 | mode2c);
+    }
+    analog::write(0x07, (analog::read(0x07) & !0x07) | an7);
+    if sleep_mode_no_ret == 0 {
+        unsafe { core::ptr::write_volatile(reg8(0x0080_0602), 0x08) };
+        analog::write(0x7f, 1);
+    } else {
+        analog::write(0x7f, 0);
+    }
+    if sleep_mode_u8 != 0 {
+        analog::write(0x3c, analog::read(0x3c) | 0x02);
+    }
+    analog::write(0x20, 0x77);
+    unsafe {
+        let sr = startup::g_pm_r_delay_us.suspend_ret_r_delay_us as u32;
+        analog::write(0x1f, (((sr << 8) + (CRYSTAL32768_TICK_PER_32CYCLE >> 1)) / CRYSTAL32768_TICK_PER_32CYCLE) as u8);
+        let dt = core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_sub(start);
+        let wake_tick = if startup::pm_long_suspend != 0 {
+            wake_m64.wrapping_add(startup::tick_cur).wrapping_sub((dt / CRYSTAL32768_TICK_PER_32CYCLE) << 5)
+        } else {
+            wake_m64
+                .wrapping_add(startup::tick_cur)
+                .wrapping_sub(((dt << 5).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1) / CRYSTAL32768_TICK_PER_32CYCLE))
+        };
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
+        core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x08);
+        while (core::ptr::read_volatile(reg8(0x0080_074f).cast_const()) & 0x08) != 0 {}
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x20);
+    }
+    if (analog::read(0x44) & !WAKEUP_STATUS_ALL) == 0 {
+        sleep_start();
+    }
+    if sleep_mode_u8 != 0 {
+        analog::write(0x3c, analog::read(0x3c) & !0x03);
+        soft_reboot_dly13ms_use24mRC();
+        unsafe { core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x20) };
+    }
+    unsafe {
+        let t32 = pm_get_32k_tick();
+        let d = t32.wrapping_sub(startup::tick_32k_cur);
+        if startup::pm_long_suspend != 0 {
+            startup::tick_cur = startup::tick_cur.wrapping_add(
+                d.wrapping_div(32).wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE),
+            );
+        } else {
+            startup::tick_cur = startup::tick_cur.wrapping_add(
+                d.wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE).wrapping_div(32),
+            );
+        }
+        startup::tick_32k_cur = startup::tick_cur.wrapping_add(20 * 16);
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x00);
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x90);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x01);
+    }
+    pm_wait_xtal_ready();
+    unsafe {
+        core::ptr::write_volatile(reg8(0x0080_0066), bak66);
+    }
+    let st = analog::read(0x44);
+    interrupt::restore(irq_enabled);
+    if st != 0 {
+        (st as u32 | STATUS_ENTER_SUSPEND) as i32
+    } else {
+        STATUS_GPIO_ERR_NO_ENTER_PM as i32
+    }
 }
 
 #[cfg(feature = "chip-8258")]
