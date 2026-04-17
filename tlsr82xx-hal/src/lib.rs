@@ -25,6 +25,7 @@ pub mod i2c;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod interrupt;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278", feature = "chip-826x"))]
+#[path = "pm_wip.rs"]
 pub mod pm;
 #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
 pub mod pwm;
