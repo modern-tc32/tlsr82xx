@@ -133,6 +133,10 @@ static mut DBG_TICK_32K_CALIB: u16 = 0;
 static mut DBG_ERR: u32 = 0;
 #[unsafe(no_mangle)]
 static mut DBG_PERSIST_RAW: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_PERSIST_NOW: u8 = 0;
+#[unsafe(no_mangle)]
+static mut DBG_PERSIST_SET: u8 = 0;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() -> i32 {
@@ -210,7 +214,9 @@ pub extern "C" fn main() -> i32 {
                 pm::Clock32kSource::ExternalCrystal => 2,
             };
         }
+        dbg_u8(&raw mut DBG_PERSIST_NOW, load_persisted_step());
         persist_step(next as u8);
+        dbg_u8(&raw mut DBG_PERSIST_SET, load_persisted_step());
         dbg_u8(&raw mut DBG_CASE_CUR, idx as u8);
         dbg_u8(&raw mut DBG_CASE_NEXT, next as u8);
         dbg_u8(&raw mut DBG_MODE_RAW, case.mode.raw());
@@ -327,7 +333,10 @@ fn indicate_last_clock(board: &mut Board) {
 
 fn indicate_last_step(board: &mut Board) {
     delay_us(SERIES_GAP_US);
-    let count = unsafe { LAST_TEST_INDEX_RAW.wrapping_add(1) };
+    // Show upcoming testcase index instead of RAM-only "last step":
+    // on cold-boot wake paths LAST_TEST_INDEX_RAW can be reset before LEDs,
+    // which makes the pattern look stuck at step 1.
+    let count = unsafe { NEXT_TEST_INDEX.wrapping_add(1) };
     blink_n_custom(&mut board.led_y, count, SHORT_PULSE_US, SHORT_PULSE_US.saturating_mul(2));
 }
 
