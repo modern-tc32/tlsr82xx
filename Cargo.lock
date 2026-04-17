@@ -146,6 +146,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tlsr82xx-pmled8258-sleep-for-ms"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
+name = "tlsr82xx-pmled8258-sleep-for-ms-vendor-probe"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
 name = "tlsr82xx-radio-selftest8258"
 version = "0.1.0"
 dependencies = [

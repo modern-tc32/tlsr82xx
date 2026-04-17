@@ -37,15 +37,15 @@ const TESTS: [TestCase; 4] = [
     },
     TestCase {
         clock: pm::Clock32kSource::ExternalCrystal,
-        mode: pm::SleepMode::Suspend,
+        mode: pm::SleepMode::DeepSleepRetentionLow16K,
     },
     TestCase {
         clock: pm::Clock32kSource::ExternalCrystal,
-        mode: pm::SleepMode::Suspend,
+        mode: pm::SleepMode::DeepSleepRetentionLow32K,
     },
     TestCase {
         clock: pm::Clock32kSource::ExternalCrystal,
-        mode: pm::SleepMode::Suspend,
+        mode: pm::SleepMode::DeepSleep,
     },
 ];
 
@@ -117,13 +117,20 @@ pub extern "C" fn main() -> i32 {
     drive_white(&mut board, false);
     drive_yellow(&mut board, false);
 
-    if unsafe { WAS_INITIALIZED } == 0 {
+    let cold_start = unsafe { WAS_INITIALIZED } == 0;
+    if cold_start {
         unsafe {
             WAS_INITIALIZED = 1;
             NEXT_TEST_INDEX = 0;
         }
         drive_white(&mut board, false);
         drive_yellow(&mut board, false);
+        drive_white(&mut board, true);
+        drive_yellow(&mut board, true);
+        delay_us(2_000_000);
+        drive_white(&mut board, false);
+        drive_yellow(&mut board, false);
+        delay_us(500_000);
     }
 
     let mut idx = unsafe { NEXT_TEST_INDEX as usize % TESTS.len() };
@@ -180,21 +187,28 @@ pub extern "C" fn main() -> i32 {
 fn switch_32k_if_needed(source: pm::Clock32kSource) {
     match source {
         pm::Clock32kSource::InternalRc => {
-            if unsafe { ACTIVE_CLOCK_RAW } != 1 {
-                pm::init(pm::Clock32kSource::InternalRc);
-                spin_delay(RC32K_SETTLE_SPIN);
-                unsafe {
-                    ACTIVE_CLOCK_RAW = 1;
-                }
+            pm::init(pm::Clock32kSource::InternalRc);
+            spin_delay(RC32K_SETTLE_SPIN);
+            unsafe {
+                ACTIVE_CLOCK_RAW = 1;
             }
         }
         pm::Clock32kSource::ExternalCrystal => {
-            if unsafe { ACTIVE_CLOCK_RAW } != 2 {
-                pm::init(pm::Clock32kSource::ExternalCrystal);
-                spin_delay(EXT32K_SETTLE_SPIN);
-                unsafe {
-                    ACTIVE_CLOCK_RAW = 2;
-                }
+            pm::init(pm::Clock32kSource::ExternalCrystal);
+            // Match vendor defaults explicitly each cycle before XTAL retention/deep entry.
+            pm::set_wakeup_timing(pm::WakeupTiming {
+                deep_r_delay_us: 1000,
+                suspend_ret_r_delay_us: 1000,
+            });
+            pm::set_xtal_stable_timing(pm::XtalStableTiming {
+                delay_us: 0x87,
+                loop_count: 10,
+                nop_count: 200,
+            });
+            pm::sync_sys_tick_per_us();
+            spin_delay(EXT32K_SETTLE_SPIN);
+            unsafe {
+                ACTIVE_CLOCK_RAW = 2;
             }
         }
     }
@@ -222,8 +236,6 @@ fn sleep_for_ms_vendor(
     dbg_u32(&raw mut DBG_STAGE, 0x32);
     dbg_inc(&raw mut DBG_CNT_ENTER_SLEEP);
     let ret = if mode == pm::SleepMode::Suspend {
-        // Suspend diagnostic path: bypass PM deep sleep handler and use cpu_stall timer wakeup.
-        // This isolates whether base timer wakeup is functional in current environment.
         let stall_mask = if wakeup_src.contains(pm::WakeupSource::TIMER) {
             0x02
         } else {
@@ -242,12 +254,7 @@ fn sleep_for_ms_vendor(
         }
         stall_ret
     } else {
-        unsafe {
-            let handler = core::ptr::read_volatile(&raw const startup::cpu_sleep_wakeup);
-            let cpu_sleep_wakeup: unsafe extern "C" fn(u32, u32, u32) -> i32 =
-                core::mem::transmute(handler);
-            cpu_sleep_wakeup(mode.raw() as u32, wakeup_src.raw() as u32, wakeup_tick) as u32
-        }
+        pm::sleep_for_ms(mode, wakeup_src, duration_ms)
     };
     dbg_u32(&raw mut DBG_LAST_RET, ret);
     dbg_u32(&raw mut DBG_STAGE, 0x33);
