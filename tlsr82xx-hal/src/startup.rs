@@ -337,10 +337,8 @@ pub extern "C" fn __tc32_efuse_delay() {
     }
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.check_32k_clk_stable")]
-pub extern "C" fn check_32k_clk_stable() {
-    pm_wait_xtal_ready();
+pub fn startup_check_32k_clk_stable() {
+    startup_pm_wait_xtal_ready();
 }
 
 #[unsafe(no_mangle)]
@@ -510,9 +508,7 @@ pub extern "C" fn irq_disable() -> u8 {
     interrupt::disable() as u8
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.pm_get_32k_tick")]
-pub extern "C" fn pm_get_32k_tick() -> u32 {
+pub fn startup_pm_get_32k_tick() -> u32 {
     loop {
         let prev = ((analog::read(ANA_32K_TICK_BYTE3) as u32) << 24)
             | ((analog::read(ANA_32K_TICK_BYTE2) as u32) << 16)
@@ -530,11 +526,9 @@ pub extern "C" fn pm_get_32k_tick() -> u32 {
     }
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.start_reboot")]
-pub extern "C" fn start_reboot() -> ! {
+pub fn startup_start_reboot() -> ! {
     interrupt::disable();
-    soft_reboot_dly13ms_use24mRC();
+    startup_soft_reboot_dly13ms_use24m_rc();
     unsafe {
         core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x20);
     }
@@ -543,9 +537,7 @@ pub extern "C" fn start_reboot() -> ! {
     }
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.pm_wait_xtal_ready")]
-pub extern "C" fn pm_wait_xtal_ready() {
+pub fn startup_pm_wait_xtal_ready() {
     let loops = unsafe {
         // These PM tuning globals may live in retention/no-init memory in mixed
         // SDK+Rust builds. On cold boot they can contain garbage and trap startup
@@ -575,7 +567,7 @@ pub extern "C" fn pm_wait_xtal_ready() {
         let delta = clock_time().wrapping_sub(start);
         if delta > 320 {
             if i == loops {
-                start_reboot();
+                startup_start_reboot();
             }
             return;
         }
@@ -604,15 +596,13 @@ pub extern "C" fn cpu_wakeup_no_deepretn_back_init() {
     adc_set_gpio_calib_vref(calib);
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn bls_pm_registerFuncBeforeSuspend(func: usize) {
+pub fn startup_bls_pm_register_func_before_suspend(func: usize) {
     unsafe {
         func_before_suspend = func;
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn pm_set_wakeup_time_param(param: PmRDelayUs) {
+pub fn startup_pm_set_wakeup_time_param(param: PmRDelayUs) {
     unsafe {
         g_pm_r_delay_us = param;
         let deep = param.deep_r_delay_us;
@@ -627,8 +617,7 @@ pub extern "C" fn pm_set_wakeup_time_param(param: PmRDelayUs) {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn pm_set_xtal_stable_timer_param(delay_us: u32, loopnum: u32, nopnum: u32) {
+pub fn startup_pm_set_xtal_stable_timer_param(delay_us: u32, loopnum: u32, nopnum: u32) {
     unsafe {
         g_pm_xtal_stable_suspend_nopnum = nopnum;
         g_pm_xtal_stable_loopnum = loopnum;
@@ -641,8 +630,7 @@ pub extern "C" fn pm_set_xtal_stable_timer_param(delay_us: u32, loopnum: u32, no
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn soft_reboot_dly13ms_use24mRC() {
+pub fn startup_soft_reboot_dly13ms_use24m_rc() {
     let mut i = 0u32;
     while i <= 0x3c8b {
         core::hint::spin_loop();
@@ -650,9 +638,7 @@ pub extern "C" fn soft_reboot_dly13ms_use24mRC() {
     }
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.sleep_start")]
-pub extern "C" fn sleep_start() {
+pub fn startup_sleep_start() {
     unsafe extern "C" {
         fn start_suspend();
     }
@@ -746,24 +732,19 @@ fn cpu_stall_wakeup_by_timer_common(
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn cpu_stall_wakeup_by_timer0(tick: u32) {
+pub fn startup_cpu_stall_wakeup_by_timer0(tick: u32) {
     cpu_stall_wakeup_by_timer_common(REG_TMR0_TICK, tick, 1, 0x01, 0x06, 16);
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn cpu_stall_wakeup_by_timer1(tick: u32) {
+pub fn startup_cpu_stall_wakeup_by_timer1(tick: u32) {
     cpu_stall_wakeup_by_timer_common(REG_TMR1_TICK, tick, 2, 0x08, 0x30, 20);
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn cpu_stall_wakeup_by_timer2(tick: u32) {
+pub fn startup_cpu_stall_wakeup_by_timer2(tick: u32) {
     cpu_stall_wakeup_by_timer_common(REG_TMR2_TICK, tick, 4, 0x40, 0x0082, 24);
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.cpu_stall")]
-pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) -> u32 {
+pub fn startup_cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) -> u32 {
     if interval_us != 0 {
         unsafe {
             core::ptr::write_volatile(reg32(REG_TMR1_TICK), 0);
@@ -809,8 +790,7 @@ pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) 
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn cpu_set_gpio_wakeup(pin: u32, pol: u32, en: i32) {
+pub fn startup_cpu_set_gpio_wakeup(pin: u32, pol: u32, en: i32) {
     let bit = ((pin >> 8) & 0xff) as u8;
     let port = (pin & 0xff) as u8;
     let pull_reg = port.wrapping_add(0x21);
@@ -825,9 +805,7 @@ pub extern "C" fn cpu_set_gpio_wakeup(pin: u32, pol: u32, en: i32) {
     analog::write(wake_reg, new_wake);
 }
 
-#[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.cpu_wakeup_init")]
-pub extern "C" fn cpu_wakeup_init() {
+pub fn startup_cpu_wakeup_init() {
     unsafe {
         core::ptr::write_volatile(reg8(REG_RST0), 0x00);
         core::ptr::write_volatile(reg8(REG_RST1), 0x00);
@@ -907,7 +885,7 @@ pub extern "C" fn cpu_wakeup_init() {
 
     if unsafe { pmParam.mcu_status } == MCU_STATUS_DEEPRET_BACK {
         unsafe {
-            let now_32k = pm_get_32k_tick();
+            let now_32k = startup_pm_get_32k_tick();
             let recovered = if pm_tim_recover != 0 {
                 let handler: unsafe extern "C" fn(u32) -> u32 =
                     core::mem::transmute(pm_tim_recover);
@@ -920,13 +898,13 @@ pub extern "C" fn cpu_wakeup_init() {
             core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x92);
             core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 15), MCU_STATUS_DEEPRET_BACK);
         }
-        pm_wait_xtal_ready();
+        startup_pm_wait_xtal_ready();
     } else {
         unsafe {
             core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), 0);
             core::ptr::write_volatile(reg8(REG_PM_WAIT), 0x01);
         }
-        pm_wait_xtal_ready();
+        startup_pm_wait_xtal_ready();
         cpu_wakeup_no_deepretn_back_init();
     }
 
@@ -1042,7 +1020,7 @@ pub fn init() -> StartupState {
         gpio::set_input_enabled_raw(pa7, true);
     }
 
-    cpu_wakeup_init();
+    crate::pm::cpu_wakeup_init();
     clock::init(clock::SysClock::Crystal48M);
     if startup_state() == StartupState::Boot {
         unsafe {
