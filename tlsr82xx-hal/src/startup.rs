@@ -9,6 +9,7 @@ use crate::regs8258::{
     REG_MSPI_CTRL, REG_MSPI_DATA, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG, REG_PWDN_CTRL,
     REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI, REG_SYSTEM_TICK,
     REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
+    REG_CLK_SEL,
 };
 use crate::{analog, clock, gpio, interrupt, timer};
 
@@ -157,6 +158,40 @@ pub static mut PM_STARTUP_DBG_WAKEUP_FLAG: u8 = 0;
 pub static mut PM_STARTUP_DBG_ANA7F: u8 = 0;
 #[unsafe(no_mangle)]
 pub static mut PM_STARTUP_DBG_ANA3C: u8 = 0;
+#[unsafe(no_mangle)]
+pub static mut PM_STARTUP_DBG_STAGE: u8 = 0;
+#[unsafe(no_mangle)]
+pub static mut PM_STARTUP_DBG_SUBSTAGE: u8 = 0;
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".custom_bss.pm_startup_dbg_magic")]
+pub static mut PM_PERSIST_DBG_MAGIC: u32 = 0;
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".custom_bss.pm_startup_dbg_stage")]
+pub static mut PM_PERSIST_DBG_STAGE: u8 = 0;
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".custom_bss.pm_startup_dbg_substage")]
+pub static mut PM_PERSIST_DBG_SUBSTAGE: u8 = 0;
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".custom_bss.pm_startup_dbg_wakeup_flag")]
+pub static mut PM_PERSIST_DBG_WAKEUP_FLAG: u8 = 0;
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".custom_bss.pm_startup_dbg_ana7f")]
+pub static mut PM_PERSIST_DBG_ANA7F: u8 = 0;
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".custom_bss.pm_startup_dbg_ana3c")]
+pub static mut PM_PERSIST_DBG_ANA3C: u8 = 0;
+
+#[inline(always)]
+fn persist_startup_stage(stage: u8, substage: u8) {
+    unsafe {
+        core::ptr::write_volatile(&raw mut PM_STARTUP_DBG_STAGE, stage);
+        core::ptr::write_volatile(&raw mut PM_STARTUP_DBG_SUBSTAGE, substage);
+        core::ptr::write_volatile(&raw mut PM_PERSIST_DBG_MAGIC, 0x504d_4442);
+        core::ptr::write_volatile(&raw mut PM_PERSIST_DBG_STAGE, stage);
+        core::ptr::write_volatile(&raw mut PM_PERSIST_DBG_SUBSTAGE, substage);
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn efuse_sys_check(info1: u32) {
@@ -287,16 +322,37 @@ pub extern "C" fn __tc32_analog_read_u8(reg: u8) -> u8 {
         core::ptr::write_volatile(ana, reg);
         core::ptr::write_volatile(ana.add(2), 0x40);
         while (core::ptr::read_volatile(ana.add(2).cast_const()) & 1) != 0 {}
-        core::ptr::read_volatile(ana.add(1).cast_const())
+        let value = core::ptr::read_volatile(ana.add(1).cast_const());
+        // Vendor parity: analog_read() always clears reg_ana_ctrl after the
+        // transaction. Leaving 0x40 latched here breaks subsequent early-boot
+        // analog writes/reads, including PM wake markers in __tc32_boot_init().
+        core::ptr::write_volatile(ana.add(2), 0);
+        value
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn __tc32_analog_write_u8(reg: u8, value: u8) {
+    unsafe {
+        let ana = reg8(0x8000b8);
+        core::ptr::write_volatile(ana, reg);
+        core::ptr::write_volatile(ana.add(1), value);
+        core::ptr::write_volatile(ana.add(2), 0x60);
+        while (core::ptr::read_volatile(ana.add(2).cast_const()) & 1) != 0 {}
+        core::ptr::write_volatile(ana.add(2), 0);
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn __tc32_system_on_for_flash() {
     unsafe {
-        core::ptr::write_volatile(reg32(0x800060), 0xff08_0000);
+        // Keep the flash power/clock bring-up byte-for-byte aligned with the
+        // official 8258 startup path. Diverging values here left flash asleep
+        // after retention wake, and boot stalled before the first fetch in
+        // `main()`.
+        core::ptr::write_volatile(reg32(0x800060), 0xff00_0000);
         core::ptr::write_volatile(reg8(0x800064), 0xff);
-        core::ptr::write_volatile(reg8(0x800065), 0xf7);
+        core::ptr::write_volatile(reg8(0x800065), 0xff);
     }
 }
 
@@ -323,8 +379,14 @@ pub extern "C" fn __tc32_flash_wakeup() {
         let flash = reg8(0x80000c);
         core::ptr::write_volatile(flash.add(1), 0);
         core::ptr::write_volatile(flash, 0xab);
-        for _ in 0..=6u32 {
-            core::hint::spin_loop();
+        // Vendor boot code uses a volatile 0..=6 loop here. A plain Rust
+        // `spin_loop()` loop was optimized away completely, which collapsed the
+        // flash wake sequence to back-to-back writes and left flash asleep
+        // after retention wake.
+        let mut delay = 0u32;
+        while unsafe { core::ptr::read_volatile(&raw const delay) } <= 6 {
+            let next = unsafe { core::ptr::read_volatile(&raw const delay) }.wrapping_add(1);
+            unsafe { core::ptr::write_volatile(&raw mut delay, next) };
         }
         core::ptr::write_volatile(flash.add(1), 1);
     }
@@ -395,6 +457,21 @@ fn boot_init_pa7_sws() {
     }
 }
 
+#[inline(always)]
+fn boot_init_has_saved_pm_mode(wake_flag: u8, wake_status: u8, pm_status: u8) -> bool {
+    if !matches!(wake_flag, 0x80 | 0x61 | 0x43 | 0x07 | 0xff) {
+        return false;
+    }
+
+    // VENDOR-DIFF:
+    // `ana 0x7e` can remain stale after external reset/activation, which makes
+    // boot init skip `.data/.bss` setup and leaves retained-RAM state random.
+    // Treat saved PM mode as valid only when there is also a real wake
+    // indicator: deep wake flag in `ana 0x7f[0]` or a wake source latched in
+    // `ana 0x44[3:0]`.
+    (pm_status & 0x01) != 0 || (wake_status & 0x0f) != 0
+}
+
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".vectors.boot")]
 pub extern "C" fn __tc32_boot_init() -> ! {
@@ -410,7 +487,19 @@ pub extern "C" fn __tc32_boot_init() -> ! {
         __tc32_efuse_delay();
 
         let wake_flag = __tc32_analog_read_u8(0x7e);
-        if wake_flag != 0 {
+        let wake_status = __tc32_analog_read_u8(0x44);
+        let pm_status = __tc32_analog_read_u8(0x7f);
+        // VENDOR-DIFF:
+        // vendor boot code treats any non-zero `ana 0x7e` as a PM wake marker.
+        // Keep the check restricted to vendor PM mode encodings to reject stale
+        // garbage after hard reset/activation, but do not additionally require
+        // `ana 0x44[3:0] != 0`: that extra gate can misclassify a real
+        // retention/deep wake as cold boot and break the wake path.
+        //
+        // Also keep boot init off analog regs `0x3a..0x3f`. `pmled8258` uses
+        // `0x3a` for persisted testcase state, and clobbering it here makes the
+        // example restart from testcase 1 after each wake.
+        if boot_init_has_saved_pm_mode(wake_flag, wake_status, pm_status) {
             core::ptr::write_volatile(reg8(0x80063e), tl_multi_addr);
         } else {
             __tc32_fill_stack_pattern(
@@ -538,44 +627,27 @@ pub fn startup_start_reboot() -> ! {
 }
 
 pub fn startup_pm_wait_xtal_ready() {
-    let loops = unsafe {
-        // These PM tuning globals may live in retention/no-init memory in mixed
-        // SDK+Rust builds. On cold boot they can contain garbage and trap startup
-        // in this loop. Clamp to known-safe defaults.
-        if g_pm_xtal_stable_loopnum == 0 || g_pm_xtal_stable_loopnum > 200 {
-            g_pm_xtal_stable_loopnum = 10;
-        }
-        if g_pm_xtal_stable_suspend_nopnum == 0 || g_pm_xtal_stable_suspend_nopnum > 10_000 {
-            g_pm_xtal_stable_suspend_nopnum = 200;
-        }
-        if g_pm_suspend_delay_us == 0 || g_pm_suspend_delay_us > 10_000 {
-            g_pm_suspend_delay_us = 0x87;
-        }
-        g_pm_xtal_stable_loopnum
-    };
+    let loops = unsafe { core::ptr::read_volatile(&raw const g_pm_xtal_stable_loopnum) };
     let mut i = 0u32;
-    loop {
-        if i > loops {
-            return;
-        }
-
+    while i < loops {
         let start = clock_time();
-        for _ in 0..60 {
-            core::hint::spin_loop();
+
+        let mut j = 0u32;
+        // Vendor uses a volatile local delay counter here; keep it volatile to
+        // preserve the wait window before checking `clock_time_exceed(start, 20)`.
+        while unsafe { core::ptr::read_volatile(&raw const j) } <= 0x3b {
+            let next = unsafe { core::ptr::read_volatile(&raw const j) }.wrapping_add(1);
+            unsafe { core::ptr::write_volatile(&raw mut j, next) };
         }
 
-        let delta = clock_time().wrapping_sub(start);
-        if delta > 320 {
-            // VENDOR-DIFF:
-            // Vendor path forces reboot on persistent xtal-ready timeout.
-            // In Rust mixed PM flow this can cause hard loop on the first test
-            // case if timing calibration is marginal. Prefer forward progress:
-            // return and let caller continue instead of reboot storm.
+        if timer::clock_time_exceed_us(start, 20) {
             return;
         }
 
         i = i.wrapping_add(1);
     }
+
+    startup_start_reboot();
 }
 
 #[unsafe(no_mangle)]
@@ -584,18 +656,26 @@ pub extern "C" fn cpu_wakeup_no_deepretn_back_init() {
         fn flash_vdd_f_calib();
     }
 
+    persist_startup_stage(0x20, 0x41);
     clock::rc_24m_cal();
+    persist_startup_stage(0x20, 0x42);
     clock::doubler_calibration();
+    persist_startup_stage(0x20, 0x43);
 
     let info1 = pm_get_info1();
     if (info1 & 0xc0) != 0xc0 {
+        persist_startup_stage(0x20, 0x44);
         efuse_sys_check(info1);
+        persist_startup_stage(0x20, 0x45);
         unsafe { flash_vdd_f_calib() };
+        persist_startup_stage(0x20, 0x46);
         return;
     }
 
     let calib = 0x03f7u16.wrapping_add(((info1 & 0x3f) as u16) * 5);
+    persist_startup_stage(0x20, 0x47);
     adc_set_gpio_calib_vref(calib);
+    persist_startup_stage(0x20, 0x48);
 }
 
 pub fn startup_bls_pm_register_func_before_suspend(func: usize) {
@@ -609,11 +689,13 @@ pub fn startup_pm_set_wakeup_time_param(param: PmRDelayUs) {
         g_pm_r_delay_us = param;
         let deep = param.deep_r_delay_us;
         let suspend_ret = param.suspend_ret_r_delay_us;
-        g_pm_early_wakeup_time_us.deep_ret =
+        g_pm_early_wakeup_time_us.suspend =
             (u32::from(suspend_ret) + 0x00e6 + g_pm_suspend_delay_us) as u16;
-        g_pm_early_wakeup_time_us.deep = suspend_ret.wrapping_add(100);
-        g_pm_early_wakeup_time_us.min = deep.wrapping_add(240);
-        if g_pm_early_wakeup_time_us.min > g_pm_early_wakeup_time_us.suspend {
+        g_pm_early_wakeup_time_us.deep_ret = suspend_ret.wrapping_add(100);
+        g_pm_early_wakeup_time_us.deep = deep.wrapping_add(240);
+        if g_pm_early_wakeup_time_us.deep < g_pm_early_wakeup_time_us.suspend {
+            g_pm_early_wakeup_time_us.min = g_pm_early_wakeup_time_us.deep.wrapping_add(0x0190);
+        } else {
             g_pm_early_wakeup_time_us.min = g_pm_early_wakeup_time_us.suspend.wrapping_add(0x0190);
         }
     }
@@ -624,9 +706,11 @@ pub fn startup_pm_set_xtal_stable_timer_param(delay_us: u32, loopnum: u32, nopnu
         g_pm_xtal_stable_suspend_nopnum = nopnum;
         g_pm_xtal_stable_loopnum = loopnum;
         g_pm_suspend_delay_us = delay_us;
-        g_pm_early_wakeup_time_us.deep_ret =
+        g_pm_early_wakeup_time_us.suspend =
             (g_pm_r_delay_us.suspend_ret_r_delay_us as u32 + 0x00e6 + delay_us) as u16;
-        if g_pm_early_wakeup_time_us.min > g_pm_early_wakeup_time_us.suspend {
+        if g_pm_early_wakeup_time_us.deep < g_pm_early_wakeup_time_us.suspend {
+            g_pm_early_wakeup_time_us.min = g_pm_early_wakeup_time_us.deep.wrapping_add(0x0190);
+        } else {
             g_pm_early_wakeup_time_us.min = g_pm_early_wakeup_time_us.suspend.wrapping_add(0x0190);
         }
     }
@@ -640,6 +724,7 @@ pub fn startup_soft_reboot_dly13ms_use24m_rc() {
     }
 }
 
+#[unsafe(link_section = ".ram_code.startup_sleep_start")]
 pub fn startup_sleep_start() {
     unsafe extern "C" {
         fn start_suspend();
@@ -651,15 +736,17 @@ pub fn startup_sleep_start() {
         core::ptr::write_volatile(reg8(REG_MSPI_DATA), 0xb9);
     }
 
-    for _ in 0..2 {
-        core::hint::spin_loop();
+    let mut delay = 0u32;
+    while unsafe { core::ptr::read_volatile(&raw const delay) } <= 1 {
+        let next = unsafe { core::ptr::read_volatile(&raw const delay) }.wrapping_add(1);
+        unsafe { core::ptr::write_volatile(&raw mut delay, next) };
     }
 
     unsafe {
         core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 1);
         core::ptr::write_volatile(reg8(REG_GPIO_PE_IE), 0);
     }
-    analog::write(0x82, 0x0c);
+    analog::write(AREG_CLK_SETTING, 0x0c);
 
     let ret_addr = unsafe {
         let hi = core::ptr::read_volatile(reg8(REG_SUSPEND_RET_ADDR_HI).cast_const()) as usize;
@@ -676,15 +763,17 @@ pub fn startup_sleep_start() {
     unsafe {
         core::ptr::write_volatile(ret_addr.0, ret_addr.1);
     }
-    analog::write(0x82, 0x64);
+    analog::write(AREG_CLK_SETTING, 0x64);
     unsafe {
         core::ptr::write_volatile(reg8(REG_GPIO_PE_IE), 0x0f);
         core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 0);
         core::ptr::write_volatile(reg8(REG_MSPI_DATA), 0xab);
     }
 
-    for _ in 0..2 {
-        core::hint::spin_loop();
+    let mut delay = 0u32;
+    while unsafe { core::ptr::read_volatile(&raw const delay) } <= 1 {
+        let next = unsafe { core::ptr::read_volatile(&raw const delay) }.wrapping_add(1);
+        unsafe { core::ptr::write_volatile(&raw mut delay, next) };
     }
 
     unsafe {
@@ -693,8 +782,10 @@ pub fn startup_sleep_start() {
     analog::write(0x34, 0x80);
 
     let nopnum = unsafe { g_pm_xtal_stable_suspend_nopnum };
-    for _ in 0..=nopnum {
-        core::hint::spin_loop();
+    let mut delay = 0u32;
+    while unsafe { core::ptr::read_volatile(&raw const delay) } <= nopnum {
+        let next = unsafe { core::ptr::read_volatile(&raw const delay) }.wrapping_add(1);
+        unsafe { core::ptr::write_volatile(&raw mut delay, next) };
     }
 }
 
@@ -808,6 +899,7 @@ pub fn startup_cpu_set_gpio_wakeup(pin: u32, pol: u32, en: i32) {
 }
 
 pub fn startup_cpu_wakeup_init() {
+    persist_startup_stage(0x10, 0x10);
     unsafe {
         core::ptr::write_volatile(reg8(REG_RST0), 0x00);
         core::ptr::write_volatile(reg8(REG_RST1), 0x00);
@@ -833,81 +925,86 @@ pub fn startup_cpu_wakeup_init() {
         core::ptr::write_volatile(reg8(REG_PM_RET_BYTE), 0x04);
         core::ptr::write_volatile(crate::mmio::reg16(REG_DCDC_CTRL), 0);
     }
+    persist_startup_stage(0x11, 0x10);
 
-    let wakeup_flag = unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) };
+    let sram_shutdown_sel =
+        unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) };
     let ana_7f = analog::read(0x7f);
     let ana_3c = analog::read(0x3c);
     unsafe {
-        PM_STARTUP_DBG_WAKEUP_FLAG = wakeup_flag;
+        PM_STARTUP_DBG_WAKEUP_FLAG = sram_shutdown_sel;
         PM_STARTUP_DBG_ANA7F = ana_7f;
         PM_STARTUP_DBG_ANA3C = ana_3c;
+        PM_PERSIST_DBG_WAKEUP_FLAG = sram_shutdown_sel;
+        PM_PERSIST_DBG_ANA7F = ana_7f;
+        PM_PERSIST_DBG_ANA3C = ana_3c;
     }
-    if wakeup_flag == 1 {
+    persist_startup_stage(0x12, 0x10);
+    if sram_shutdown_sel == 1 {
         analog::write(0x01, 0x3c);
     } else {
         analog::write(0x01, 0x4c);
     }
 
-    let need_read_wakeup_src = if (wakeup_flag & 0x01) != 0 {
+    if (ana_7f & 0x01) != 0 {
+        persist_startup_stage(0x20, 0x20);
         unsafe {
-            pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
+            pmParam.mcu_status = MCU_STATUS_DEEP_BACK;
         }
-        true
-    } else if (ana_7f & 0x01) != 0 {
+        analog::write(0x3c, ana_3c & 0xfd);
         unsafe {
-            pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK_CTRL), 0x01);
         }
-        true
+        persist_startup_stage(0x20, 0x22);
+        startup_pm_wait_xtal_ready();
+        persist_startup_stage(0x20, 0x23);
+        cpu_wakeup_no_deepretn_back_init();
+        persist_startup_stage(0x20, 0x24);
     } else {
-        let deep_back = ana_3c;
-        if (deep_back & 0x02) != 0 {
-            unsafe {
-                pmParam.mcu_status = MCU_STATUS_DEEP_BACK;
-            }
-            analog::write(0x3c, deep_back & 0xfd);
-            false
-        } else {
-            unsafe {
-                pmParam.mcu_status = MCU_STATUS_BOOT;
-            }
-            false
-        }
-    };
-
-    if need_read_wakeup_src {
+        persist_startup_stage(0x30, 0x30);
         unsafe {
-            pmParam.wakeup_src = analog::read(0x44);
-            pmParam.is_pad_wakeup = if (pmParam.wakeup_src & 0x0a) == 0x08 {
-                1
-            } else {
-                0
-            };
+            pmParam.mcu_status = MCU_STATUS_DEEPRET_BACK;
         }
     }
 
+    unsafe {
+        pmParam.wakeup_src = analog::read(0x44);
+        pmParam.is_pad_wakeup = if (pmParam.wakeup_src & 0x0a) == 0x08 {
+            1
+        } else {
+            0
+        };
+    }
+
     if unsafe { pmParam.mcu_status } == MCU_STATUS_DEEPRET_BACK {
+        persist_startup_stage(0x30, 0x31);
         unsafe {
             let now_32k = startup_pm_get_32k_tick();
-            let recovered = if pm_tim_recover != 0 {
-                let handler: unsafe extern "C" fn(u32) -> u32 =
-                    core::mem::transmute(pm_tim_recover);
+            tick_cur = if pm_tim_recover != 0 {
+                let handler: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(pm_tim_recover);
                 handler(now_32k)
             } else {
                 now_32k
             };
-            core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), recovered);
             core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x00);
             core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 12), 0x92);
-            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK + 15), MCU_STATUS_DEEPRET_BACK);
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK_CTRL), 0x01);
         }
+        persist_startup_stage(0x30, 0x32);
         startup_pm_wait_xtal_ready();
+        persist_startup_stage(0x30, 0x33);
     } else {
+        // VENDOR-DIFF: keep explicit startup breadcrumbs, but preserve the
+        // vendor's second deep-wake init pass and ordering.
+        persist_startup_stage(0x20, 0x31);
         unsafe {
-            core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), 0);
-            core::ptr::write_volatile(reg8(REG_PM_WAIT), 0x01);
+            core::ptr::write_volatile(reg8(REG_SYSTEM_TICK_CTRL), 0x01);
         }
+        persist_startup_stage(0x20, 0x32);
         startup_pm_wait_xtal_ready();
+        persist_startup_stage(0x20, 0x33);
         cpu_wakeup_no_deepretn_back_init();
+        persist_startup_stage(0x20, 0x34);
     }
 
     unsafe {
@@ -916,6 +1013,7 @@ pub fn startup_cpu_wakeup_init() {
         let value = core::ptr::read_volatile(reg8(REG_GPIO_WAKEUP_IRQ).cast_const()) | 0x0c;
         core::ptr::write_volatile(reg8(REG_GPIO_WAKEUP_IRQ), value);
     }
+    persist_startup_stage(0x40, 0x40);
     let _ = (ANA_REG_0X8A, REG_PWDN_CTRL);
 }
 
@@ -1013,6 +1111,7 @@ pub fn set_pm_long_suspend(value: bool) {
 
 #[inline(always)]
 pub fn init() -> StartupState {
+    persist_startup_stage(0x01, 0x01);
     interrupt::disable();
     interrupt::clear_mask(interrupt::ALL_IRQS);
     interrupt::clear_all_irq_sources();
@@ -1022,8 +1121,11 @@ pub fn init() -> StartupState {
         gpio::set_input_enabled_raw(pa7, true);
     }
 
+    persist_startup_stage(0x02, 0x01);
     crate::pm::cpu_wakeup_init();
+    persist_startup_stage(0x03, 0x01);
     clock::init(clock::SysClock::Crystal48M);
+    persist_startup_stage(0x04, 0x01);
     if startup_state() == StartupState::Boot {
         unsafe {
             core::ptr::write_volatile(reg32(REG_SYSTEM_TICK), 0);
@@ -1035,6 +1137,7 @@ pub fn init() -> StartupState {
     unsafe {
         sysTimerPerUs = timer::sys_tick_per_us();
     }
+    persist_startup_stage(0x05, 0x01);
 
     startup_state()
 }

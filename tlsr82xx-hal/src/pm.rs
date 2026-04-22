@@ -8,9 +8,9 @@ use crate::regs8258::{REG_MCU_WAKEUP_MASK, REG_PWDN_CTRL};
 #[cfg(feature = "chip-8258")]
 const REG_SYSTEM_WAKEUP_TICK: usize = 0x0080_0748;
 
-const SYS_TICK_HZ: u32 = 16_000_000;
 const RC_32K_HZ: u32 = 32_000;
 const XTAL_32K_HZ: u32 = 32_768;
+const SYS_TICK_HZ: u32 = 16_000_000;
 
 const PM_WAKEUP_PAD_BITS: u8 = 1 << 4;
 const PM_WAKEUP_CORE_BITS: u8 = 1 << 5;
@@ -464,11 +464,7 @@ pub fn sleep_for_ms(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32)
         }
         let hz = hz_32k(source) as u64;
         let ticks_32k = ((duration_ms as u64).saturating_mul(hz) / 1000).max(1);
-        return long_sleep_wakeup_impl(
-            mode,
-            wakeup_src,
-            ticks_32k.min(u32::MAX as u64) as u32,
-        ) as u32;
+        return long_sleep_32k(mode, wakeup_src, ticks_32k.min(u32::MAX as u64) as u32);
     }
 
     let ticks_per_us = timer::sys_tick_per_us();
@@ -494,6 +490,9 @@ pub fn long_sleep_32k(
     }
     #[cfg(feature = "chip-8258")]
     {
+    // Vendor 8258 long-sleep entry points consume raw 32k-domain durations
+    // (`duration_ms * 32` in the official SDK RC path), so keep this API in
+    // the same unit and pass it through unchanged.
     long_sleep_wakeup_impl(mode, wakeup_src, duration_ticks_32k) as u32
     }
 }
@@ -515,9 +514,14 @@ pub fn select_32k_source(source: Clock32kSource) {
     }
 
     let tick_32k_calib = match source {
-        Clock32kSource::InternalRc => 500u16,
-        // 16MHz / 32768Hz ~= 488.281
-        Clock32kSource::ExternalCrystal => 488u16,
+        // Vendor RC PM code uses `tick_32k_calib` in the scaled
+        // `delta_32k * calib / 16` form, so the seed must be the
+        // system-tick count for 16 cycles of 32k, not the raw 16MHz/32k ratio.
+        Clock32kSource::InternalRc => 8_000u16,
+        // Vendor XTAL PM code uses the 32-cycle constant `15625`
+        // (16MHz / 32768Hz * 32). Keep the same unit here so any
+        // fallback reads stay on the vendor scale.
+        Clock32kSource::ExternalCrystal => 15_625u16,
     };
     startup::set_tick_32k_calib(tick_32k_calib);
 
@@ -558,15 +562,35 @@ fn hz_32k(source: Clock32kSource) -> u32 {
 #[inline(always)]
 fn ticks_32k_to_sys_ticks(ticks_32k: u32, source: Clock32kSource) -> u32 {
     let hz = hz_32k(source) as u64;
-    let sys_ticks = (ticks_32k as u64).saturating_mul(SYS_TICK_HZ as u64) / hz;
+    // TLSR8258 datasheet, "5.3 System Timer":
+    // system timer clock is fixed at 16MHz irrespective of system clock.
+    let sys_hz = SYS_TICK_HZ as u64;
+    let sys_ticks = (ticks_32k as u64).saturating_mul(sys_hz) / hz;
     sys_ticks.min(u32::MAX as u64) as u32
+}
+
+#[inline(always)]
+fn vendor_clock_dly(cycles: usize) {
+    let mut delay = 0usize;
+    while unsafe { core::ptr::read_volatile(&raw const delay) } < cycles {
+        let next = unsafe { core::ptr::read_volatile(&raw const delay) }.wrapping_add(1);
+        unsafe { core::ptr::write_volatile(&raw mut delay, next) };
+    }
+}
+
+#[inline(always)]
+fn wake44_gate_ready(wake44: u8) -> bool {
+    // Vendor checks only the documented wake-status bits in ana 0x44[3:0].
+    // Bit7 has been observed set on real hardware and is irrelevant here.
+    (wake44 & WAKEUP_STATUS_ALL) == 0
 }
 
 #[inline(always)]
 #[cfg(test)]
 fn sys_ticks_to_32k_ticks(sys_ticks: u32, source: Clock32kSource) -> u32 {
     let hz = hz_32k(source) as u64;
-    let ticks_32k = (sys_ticks as u64).saturating_mul(hz) / (SYS_TICK_HZ as u64);
+    let sys_hz = SYS_TICK_HZ as u64;
+    let ticks_32k = (sys_ticks as u64).saturating_mul(hz) / sys_hz;
     ticks_32k.min(u32::MAX as u64) as u32
 }
 
@@ -648,9 +672,10 @@ fn sleep_impl(
 }
 
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.pm_tim_recover_32k_rc")]
 pub extern "C" fn pm_tim_recover_32k_rc(now_tick_32k: u32) -> u32 {
     unsafe {
-        let deep_ret_tick = if startup::pm_long_suspend != 0 {
+        if startup::pm_long_suspend != 0 {
             startup::tick_cur.wrapping_add(
                 now_tick_32k
                     .wrapping_sub(startup::tick_32k_cur)
@@ -664,17 +689,15 @@ pub extern "C" fn pm_tim_recover_32k_rc(now_tick_32k: u32) -> u32 {
                     .wrapping_mul(startup::tick_32k_calib as u32)
                     .wrapping_div(16),
             )
-        };
-        startup::tick_cur = deep_ret_tick;
-        startup::tick_32k_cur = now_tick_32k;
-        deep_ret_tick
+        }
     }
 }
 
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.pm_tim_recover_32k_xtal")]
 pub extern "C" fn pm_tim_recover_32k_xtal(now_tick_32k: u32) -> u32 {
     unsafe {
-        let deep_ret_tick = if startup::pm_long_suspend != 0 {
+        if startup::pm_long_suspend != 0 {
             startup::tick_cur.wrapping_add(
                 now_tick_32k
                     .wrapping_sub(startup::tick_32k_cur)
@@ -688,10 +711,7 @@ pub extern "C" fn pm_tim_recover_32k_xtal(now_tick_32k: u32) -> u32 {
                     .wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE)
                     .wrapping_div(32),
             )
-        };
-        startup::tick_cur = deep_ret_tick;
-        startup::tick_32k_cur = now_tick_32k;
-        deep_ret_tick
+        }
     }
 }
 
@@ -701,53 +721,415 @@ fn long_sleep_wakeup_impl(
     wakeup_src: WakeupSource,
     wakeup_duration_ticks_32k: u32,
 ) -> i32 {
-    if !mode.is_suspend() {
-        return match current_32k_source() {
-            Clock32kSource::InternalRc => pm_long_sleep_wakeup(
-                mode.raw() as u32,
-                wakeup_src.raw() as u32,
-                wakeup_duration_ticks_32k,
-            ),
-            Clock32kSource::ExternalCrystal => cpu_long_sleep_wakeup_32k_xtal(
-                mode.raw() as u32,
-                wakeup_src.raw() as u32,
-                wakeup_duration_ticks_32k,
-            ),
-        };
-    }
-    let wakeup_tick_32k = current_32k_tick().wrapping_add(wakeup_duration_ticks_32k.max(1));
     let source = current_32k_source();
-    sleep_impl(mode, wakeup_src, wakeup_tick_32k, source, true)
+    let duration_ticks_32k = wakeup_duration_ticks_32k.max(1);
+    // Vendor long-sleep headers document raw 32k-tick durations for both RC
+    // and XTAL variants (`32*1000 -> 1s` for RC, `32768 -> 1s` for XTAL).
+    // Keep the long-sleep API in that domain.
+    match source {
+        Clock32kSource::InternalRc => {
+            pm_long_sleep_wakeup(mode.raw() as u32, wakeup_src.raw() as u32, duration_ticks_32k)
+        }
+        Clock32kSource::ExternalCrystal => cpu_long_sleep_wakeup_32k_xtal(
+            mode.raw() as u32,
+            wakeup_src.raw() as u32,
+            duration_ticks_32k,
+        ),
+    }
+}
+
+#[cfg(feature = "chip-8258")]
+#[inline(always)]
+#[unsafe(link_section = ".text.switch_ext32kpad_to_int32krc")]
+fn switch_ext32kpad_to_int32krc(mode: u8) {
+    // Vendor parity: ANA_SYS_DEEP_CLR(SYS_NEED_REINIT_EXT32K)
+    analog::write(0x3c, analog::read(0x3c) & !0x01);
+    analog::write(0x2d, 0x15);
+    analog::write(0x05, 0x02);
+    analog::write(0x2c, mode | 0x16);
 }
 
 #[cfg(feature = "chip-8258")]
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.cpu_sleep_wakeup_32k_rc")]
 pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tick: u32) -> i32 {
-    // VENDOR-DIFF: logic-equivalent Rust path; instruction layout may differ from GCC tc32.
-    sleep_impl(
-        decode_mode(mode),
-        WakeupSource(wakeup_src as u8),
-        wakeup_tick,
-        Clock32kSource::InternalRc,
-        false,
-    )
+    let sleep_mode_u8 = decode_mode(mode).raw();
+    let wakeup_src_u8 = wakeup_src as u8;
+    let irq_enabled = interrupt::disable();
+    let wake_ticks = wakeup_tick;
+    let timer_wakeup = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
+
+    while unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_calib) } == 0 {
+        core::hint::spin_loop();
+    }
+    let calib = unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_calib) };
+    unsafe { core::ptr::write_volatile(&raw mut startup::tick_32k_calib, calib) };
+    let t0 = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+
+    if timer_wakeup {
+        let dt = wake_ticks.wrapping_sub(t0);
+        if dt > 0xE0000000 {
+            interrupt::restore(irq_enabled);
+            return (analog::read(0x44) & WAKEUP_STATUS_ALL) as i32;
+        }
+        let min_wakeup_us =
+            unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.min) };
+        let ew = (min_wakeup_us as u32) << 4;
+        if dt >= ew {
+            unsafe {
+                core::ptr::write_volatile(
+                    &raw mut startup::pm_long_suspend,
+                    u8::from(dt > (0xffu32 << 20)),
+                );
+            }
+        } else {
+            analog::write(0x44, WAKEUP_STATUS_ALL);
+            let st = loop {
+                let st = analog::read(0x44) & WAKEUP_STATUS_ALL;
+                let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+                if now.wrapping_sub(t0) >= dt || st != 0 {
+                    break st;
+                }
+            };
+            interrupt::restore(irq_enabled);
+            return st as i32;
+        }
+    }
+
+    let before = unsafe { core::ptr::read_volatile(&raw const startup::func_before_suspend) };
+    if before != 0 {
+        let func: extern "C" fn() -> i32 = unsafe { core::mem::transmute(before) };
+        if func() == 0 {
+            interrupt::restore(irq_enabled);
+            return WAKEUP_STATUS_PAD as i32;
+        }
+    }
+
+    unsafe {
+        core::ptr::write_volatile(
+            &raw mut startup::tick_cur,
+            core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_add(0x8c << 2),
+        );
+        core::ptr::write_volatile(&raw mut startup::tick_32k_cur, pm_get_32k_tick());
+    }
+
+    let suspend_early =
+        unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.suspend) };
+    let deep_ret_early =
+        unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.deep_ret) };
+    let early = if sleep_mode_u8 != 0 {
+        deep_ret_early
+    } else {
+        suspend_early
+    } as u32;
+    let target = wake_ticks.wrapping_sub(early << 4);
+
+    analog::write(0x26, wakeup_src_u8);
+    analog::write(0x44, WAKEUP_STATUS_ALL);
+    let bak66 = unsafe { core::ptr::read_volatile(reg8(0x0080_0066).cast_const()) };
+    unsafe { core::ptr::write_volatile(reg8(0x0080_0066), 0) };
+
+    let sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
+    let (an7, a2c_high, a2b, a7e) = if sleep_mode_no_ret != 0 {
+        let t2 = analog::read(0x02);
+        analog::write(0x02, (t2 & !0x07) | 0x05);
+        unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
+        (5u8, 0x40u8, 0xdeu8, sleep_mode_u8)
+    } else if sleep_mode_u8 == 0 {
+        analog::write(0x04, 0x48);
+        analog::write(0x7e, 0x00);
+        (4u8, 0x96u8, 0x5eu8, 0u8)
+    } else {
+        (5u8, 0xc0u8, 0xdeu8, sleep_mode_u8)
+    };
+    analog::write(0x7e, a7e);
+    analog::write(0x2b, a2b);
+    let cmp = u8::from((wakeup_src_u8 & PM_WAKEUP_COMPARATOR_BITS) != 0);
+    let any = cmp | u8::from(timer_wakeup);
+    analog::write(0x2c, 0x16 | a2c_high | any | (cmp << 3));
+    analog::write(0x07, (analog::read(0x07) & !0x07) | an7);
+    if sleep_mode_no_ret == 0 {
+        unsafe { core::ptr::write_volatile(reg8(0x0080_0602), 0x08) };
+        analog::write(0x7f, 1);
+    } else {
+        analog::write(0x7f, 0);
+    }
+
+    let half = (calib >> 1) as u32;
+    if sleep_mode_u8 != 0 {
+        analog::write(0x3c, analog::read(0x3c) | 0x02);
+    }
+    analog::write(
+        0x20,
+        0x7f_u32
+            .wrapping_sub((0xfa00u32.wrapping_add(half)) / (calib as u32)) as u8,
+    );
+    let sr = unsafe {
+        core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us)
+    } as u32;
+    analog::write(0x1f, (((sr << 7).wrapping_add(half)) / (calib as u32)) as u8);
+
+    let d = target.wrapping_sub(unsafe { core::ptr::read_volatile(&raw const startup::tick_cur) });
+    let wake_tick = if unsafe { core::ptr::read_volatile(&raw const startup::pm_long_suspend) } != 0 {
+        target
+            .wrapping_sub((d / (calib as u32)) << 4)
+            .wrapping_add(unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_cur) })
+    } else {
+        target
+            .wrapping_sub(((d << 4).wrapping_add((calib >> 1) as u32)) / (calib as u32))
+            .wrapping_add(unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_cur) })
+    };
+    unsafe {
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
+        core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x08);
+        vendor_clock_dly(10);
+        vendor_clock_dly(6);
+        while (core::ptr::read_volatile(reg8(0x0080_074f).cast_const()) & 0x08) != 0 {}
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x20);
+    }
+
+    // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
+    // were enough to perturb PM entry on real hardware.
+    if wake44_gate_ready(analog::read(0x44)) {
+        sleep_start();
+    }
+    if sleep_mode_u8 != 0 {
+        analog::write(0x3c, analog::read(0x3c) & !0x02);
+        soft_reboot_dly13ms_use24mRC();
+        unsafe { core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x20) };
+    }
+
+    let t32 = pm_get_32k_tick();
+    unsafe {
+        let cur = core::ptr::read_volatile(&raw const startup::tick_cur);
+        let cur32 = core::ptr::read_volatile(&raw const startup::tick_32k_cur);
+        let long = core::ptr::read_volatile(&raw const startup::pm_long_suspend) != 0;
+        let upd = if long {
+            cur.wrapping_add(((t32.wrapping_sub(cur32)) >> 4).wrapping_mul(calib as u32))
+        } else {
+            cur.wrapping_add((t32.wrapping_sub(cur32)).wrapping_mul(calib as u32) >> 4)
+        };
+        core::ptr::write_volatile(&raw mut startup::tick_cur, upd);
+        core::ptr::write_volatile(&raw mut startup::tick_32k_cur, upd.wrapping_add(20 * 16));
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x00);
+        vendor_clock_dly(6);
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x92);
+        vendor_clock_dly(4);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x01);
+    }
+    pm_wait_xtal_ready();
+    unsafe { core::ptr::write_volatile(reg8(0x0080_0066), bak66) };
+
+    let st = analog::read(0x44);
+    if (st & PM_WAKEUP_COMPARATOR_BITS) != 0 && timer_wakeup {
+        loop {
+            let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+            if now.wrapping_sub(wake_ticks) <= (1u32 << 30) {
+                break;
+            }
+        }
+    }
+    interrupt::restore(irq_enabled);
+    if st != 0 {
+        (st as u32 | STATUS_ENTER_SUSPEND) as i32
+    } else {
+        STATUS_GPIO_ERR_NO_ENTER_PM as i32
+    }
 }
 
 #[cfg(feature = "chip-8258")]
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.cpu_sleep_wakeup_32k_xtal")]
 pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_tick: u32) -> i32 {
-    // VENDOR-DIFF: logic-equivalent Rust path; instruction layout may differ from GCC tc32.
-    sleep_impl(
-        decode_mode(mode),
-        WakeupSource(wakeup_src as u8),
-        wakeup_tick,
-        Clock32kSource::ExternalCrystal,
-        false,
-    )
+    let sleep_mode_u8 = decode_mode(mode).raw();
+    let wakeup_src_u8 = wakeup_src as u8;
+    let irq_enabled = interrupt::disable();
+    let timer_wakeup = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
+    let start = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+
+    if timer_wakeup {
+        let dt = wakeup_tick.wrapping_sub(start);
+        if dt > 0xE0000000 {
+            interrupt::restore(irq_enabled);
+            return (analog::read(0x44) & WAKEUP_STATUS_ALL) as i32;
+        }
+        let min_wakeup_us =
+            unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.min) };
+        if dt >= ((min_wakeup_us as u32) << 4) {
+            unsafe {
+                core::ptr::write_volatile(
+                    &raw mut startup::pm_long_suspend,
+                    if dt > 0x07feffff { 1 } else { u8::from(timer_wakeup) },
+                );
+            }
+        } else {
+            analog::write(0x44, WAKEUP_STATUS_ALL);
+            let st = loop {
+                let st = analog::read(0x44) & WAKEUP_STATUS_ALL;
+                let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+                if now.wrapping_sub(start) >= dt || st != 0 {
+                    break st;
+                }
+            };
+            interrupt::restore(irq_enabled);
+            return st as i32;
+        }
+    }
+
+    let before = unsafe { core::ptr::read_volatile(&raw const startup::func_before_suspend) };
+    if before != 0 {
+        let func: extern "C" fn() -> i32 = unsafe { core::mem::transmute(before) };
+        if func() == 0 {
+            interrupt::restore(irq_enabled);
+            return WAKEUP_STATUS_PAD as i32;
+        }
+    }
+
+    unsafe {
+        core::ptr::write_volatile(
+            &raw mut startup::tick_cur,
+            core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_add(0x8c << 2),
+        );
+        core::ptr::write_volatile(&raw mut startup::tick_32k_cur, pm_get_32k_tick());
+    }
+    let suspend_early =
+        unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.suspend) };
+    let deep_early =
+        unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.deep) };
+    let target = if sleep_mode_u8 == 0x80 {
+        wakeup_tick.wrapping_sub((deep_early as u32) << 4)
+    } else {
+        wakeup_tick.wrapping_sub((suspend_early as u32) << 4)
+    };
+
+    analog::write(0x26, wakeup_src_u8);
+    analog::write(0x44, WAKEUP_STATUS_ALL);
+    let bak66 = unsafe { core::ptr::read_volatile(reg8(0x0080_0066).cast_const()) };
+    unsafe { core::ptr::write_volatile(reg8(0x0080_0066), 0) };
+
+    let sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
+    let an7 = if sleep_mode_no_ret != 0 {
+        let t2 = analog::read(0x02);
+        analog::write(0x02, (t2 & !0x07) | 0x05);
+        unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
+        analog::write(0x7e, sleep_mode_u8);
+        analog::write(0x2b, 0xde);
+        let delta = sleep_mode_u8.wrapping_sub(0x80);
+        let not_deep = u8::from(delta != 0);
+        analog::write(0x2c, 0xD6u8 | not_deep | (not_deep << 3));
+        5u8
+    } else {
+        analog::write(0x04, 0x48);
+        analog::write(0x7e, 0x00);
+        analog::write(0x2b, 0x5e);
+        analog::write(0x2c, 0x80u8 | if timer_wakeup { 0x14 } else { 0x1d });
+        4u8
+    };
+    analog::write(0x07, (analog::read(0x07) & !0x07) | an7);
+    if sleep_mode_no_ret == 0 {
+        unsafe { core::ptr::write_volatile(reg8(0x0080_0602), 0x08) };
+        analog::write(0x7f, 1);
+    } else {
+        analog::write(0x7f, 0);
+    }
+
+    if sleep_mode_u8 == 0x80 {
+        analog::write(0x3c, analog::read(0x3c) | 0x02);
+    }
+    analog::write(0x20, 0x77);
+    let sr = unsafe {
+        core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us)
+    } as u32;
+    analog::write(
+        0x1f,
+        (((sr << 8).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1))
+            / CRYSTAL32768_TICK_PER_32CYCLE) as u8,
+    );
+
+    let d = target.wrapping_sub(unsafe { core::ptr::read_volatile(&raw const startup::tick_cur) });
+    let wake_tick = if unsafe { core::ptr::read_volatile(&raw const startup::pm_long_suspend) } != 0 {
+        target
+            .wrapping_sub((d / CRYSTAL32768_TICK_PER_32CYCLE) << 5)
+            .wrapping_add(unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_cur) })
+    } else {
+        target
+            .wrapping_sub(
+                ((d << 5).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1))
+                    / CRYSTAL32768_TICK_PER_32CYCLE,
+            )
+            .wrapping_add(unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_cur) })
+    };
+    unsafe {
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
+        core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x08);
+        vendor_clock_dly(10);
+        vendor_clock_dly(6);
+        while (core::ptr::read_volatile(reg8(0x0080_074f).cast_const()) & 0x08) != 0 {}
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x20);
+    }
+    // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
+    // were enough to perturb PM entry on real hardware.
+    if wake44_gate_ready(analog::read(0x44)) {
+        sleep_start();
+    }
+    if sleep_mode_u8 == 0x80 {
+        analog::write(0x3c, analog::read(0x3c) & !0x03);
+        soft_reboot_dly13ms_use24mRC();
+        unsafe { core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x20) };
+    }
+
+    let now32 = pm_get_32k_tick();
+    unsafe {
+        let cur = core::ptr::read_volatile(&raw const startup::tick_cur);
+        let cur32 = core::ptr::read_volatile(&raw const startup::tick_32k_cur);
+        let long = core::ptr::read_volatile(&raw const startup::pm_long_suspend) != 0;
+        let upd = if long {
+            cur.wrapping_add(
+                now32
+                    .wrapping_sub(cur32)
+                    .wrapping_div(32)
+                    .wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE),
+            )
+        } else {
+            cur.wrapping_add(
+                now32
+                    .wrapping_sub(cur32)
+                    .wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE)
+                    .wrapping_div(32),
+            )
+        };
+        core::ptr::write_volatile(&raw mut startup::tick_cur, upd);
+        core::ptr::write_volatile(&raw mut startup::tick_32k_cur, upd.wrapping_add(20 * 16));
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x00);
+        vendor_clock_dly(7);
+        core::ptr::write_volatile(reg8(0x0080_074c), 0x92);
+        vendor_clock_dly(4);
+        core::ptr::write_volatile(reg8(0x0080_074f), 0x01);
+    }
+    pm_wait_xtal_ready();
+    unsafe { core::ptr::write_volatile(reg8(0x0080_0066), bak66) };
+    let st = analog::read(0x44);
+    if (st & PM_WAKEUP_COMPARATOR_BITS) != 0 && timer_wakeup {
+        loop {
+            let now = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+            if now.wrapping_sub(wakeup_tick) <= (1u32 << 30) {
+                break;
+            }
+        }
+    }
+    interrupt::restore(irq_enabled);
+    if st != 0 {
+        (st as u32 | STATUS_ENTER_SUSPEND) as i32
+    } else {
+        STATUS_GPIO_ERR_NO_ENTER_PM as i32
+    }
 }
 
 #[cfg(feature = "chip-8258")]
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.pm_long_sleep_wakeup")]
 pub extern "C" fn pm_long_sleep_wakeup(
     mode: u32,
     wakeup_src: u32,
@@ -757,8 +1139,19 @@ pub extern "C" fn pm_long_sleep_wakeup(
     let wakeup_src_u8 = wakeup_src as u8;
     let irq_enabled = interrupt::disable();
     let start_tick = unsafe { core::ptr::read_volatile(reg32(0x0080_0740).cast_const()) };
+    let calib_reg = unsafe { core::ptr::read_volatile(reg16(0x0080_0750).cast_const()) };
+    // VENDOR-DIFF: vendor code assumes `reg16(0x750)` is already non-zero when
+    // long sleep is entered. On current hardware/port this register has been
+    // observed as zero in the failing RC path, which makes the next divide
+    // hang. Keep the vendor read first, but fall back to the already selected
+    // 32k-source calibration only for the zero case.
+    let calib = if calib_reg != 0 {
+        calib_reg
+    } else {
+        unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_calib) }
+    };
     unsafe {
-        startup::tick_32k_calib = core::ptr::read_volatile(reg16(0x0080_0750).cast_const());
+        startup::tick_32k_calib = calib;
     }
     let has_timer = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
     if has_timer && wakeup_duration_ticks_32k < 0x40 {
@@ -800,29 +1193,39 @@ pub extern "C" fn pm_long_sleep_wakeup(
         core::ptr::write_volatile(reg8(0x0080_0066), 0);
     }
     let sleep_mode_u8 = sleep_mode.raw();
-    let sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
+    let sleep_mode_retention = sleep_mode_u8 & 0x7f;
     let mut an7 = 0u8;
     let mut v2c_base = 0x16u8;
-    if sleep_mode_no_ret != 0 {
+    if sleep_mode_retention != 0 {
         let t2 = analog::read(0x02);
         analog::write(0x02, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
-        an7 = 5;
+        an7 = 1;
         v2c_base = 0x56;
         analog::write(0x2b, 0xde);
-    } else {
+    } else if sleep_mode_u8 == 0 {
         analog::write(0x04, 0x48);
         analog::write(0x7e, 0x00);
         an7 = 4;
         v2c_base = 0x96;
         analog::write(0x2b, 0x5e);
+    } else {
+        an7 = 5;
+        v2c_base = 0xd6;
+        analog::write(0x2b, 0xde);
     }
     analog::write(0x7e, sleep_mode_u8);
     let cmp = ((wakeup_src_u32 & PM_WAKEUP_COMPARATOR_BITS as u32) != 0) as u8;
     let any = cmp | (has_timer as u8);
-    analog::write(0x2c, v2c_base | any | (cmp << 3));
+    let mut analog2c = v2c_base | any | (cmp << 3);
+    if sleep_mode_retention != 0 && wakeup_src_u8 == PM_WAKEUP_TIMER_BITS {
+        analog2c = 0x5e;
+    } else if sleep_mode_u8 == SleepMode::DeepSleep.raw() && wakeup_src_u8 == PM_WAKEUP_TIMER_BITS {
+        analog2c = 0xde;
+    }
+    analog::write(0x2c, analog2c);
     analog::write(0x07, (analog::read(0x07) & !0x07) | an7);
-    if sleep_mode_no_ret == 0 {
+    if sleep_mode_retention == 0 {
         unsafe {
             core::ptr::write_volatile(reg8(0x0080_0602), 0x08);
         }
@@ -831,32 +1234,38 @@ pub extern "C" fn pm_long_sleep_wakeup(
         analog::write(0x7f, 0x00);
     }
     unsafe {
-        let half = (startup::tick_32k_calib >> 1) as u32;
-        if sleep_mode_u8 != 0 {
+        let calib_u32 = calib as u32;
+        let half = (calib >> 1) as u32;
+        if sleep_mode_u8 == SleepMode::DeepSleep.raw() {
             analog::write(0x3c, analog::read(0x3c) | 0x02);
         }
-        let v20 = 0x7f_u32.wrapping_sub((0xfa00_u32.wrapping_add(half)) / startup::tick_32k_calib as u32) as u8;
-        analog::write(0x20, v20);
-        let sr = startup::g_pm_r_delay_us.suspend_ret_r_delay_us as u32;
-        analog::write(0x1f, (((sr << 7).wrapping_add(half)) / startup::tick_32k_calib as u32) as u8);
+        analog::write(0x20, 0x7f_u32.wrapping_sub((0xfa00_u32.wrapping_add(half)) / calib_u32) as u8);
+        let sr = core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us) as u32;
+        analog::write(0x1f, !(((sr << 7).wrapping_add(half)) / calib_u32) as u8);
         let dt = core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_sub(start_tick);
         let wake_tick = if startup::pm_long_suspend != 0 {
-            minus64.wrapping_add(startup::tick_cur).wrapping_sub((dt / startup::tick_32k_calib as u32) << 4)
+            minus64
+                .wrapping_add(startup::tick_32k_cur)
+                .wrapping_sub((dt / calib_u32) << 4)
         } else {
             minus64
-                .wrapping_add(startup::tick_cur)
-                .wrapping_sub(((dt << 4).wrapping_add((startup::tick_32k_calib >> 1) as u32) / startup::tick_32k_calib as u32))
+                .wrapping_add(startup::tick_32k_cur)
+                .wrapping_sub((dt << 4).wrapping_add((calib >> 1) as u32) / calib_u32)
         };
         core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
         core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
         core::ptr::write_volatile(reg8(0x0080_074f), 0x08);
+        vendor_clock_dly(10);
+        vendor_clock_dly(6);
         while (core::ptr::read_volatile(reg8(0x0080_074f).cast_const()) & 0x08) != 0 {}
         core::ptr::write_volatile(reg8(0x0080_074c), 0x20);
     }
-    if (analog::read(0x44) & !WAKEUP_STATUS_ALL) == 0 {
+    // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
+    // were enough to perturb PM entry on real hardware.
+    if wake44_gate_ready(analog::read(0x44)) {
         sleep_start();
     }
-    if sleep_mode_u8 != 0 {
+    if sleep_mode_u8 == SleepMode::DeepSleep.raw() {
         analog::write(0x3c, analog::read(0x3c) & !0x02);
         soft_reboot_dly13ms_use24mRC();
         unsafe { core::ptr::write_volatile(reg8(REG_PWDN_CTRL), 0x20) };
@@ -876,7 +1285,9 @@ pub extern "C" fn pm_long_sleep_wakeup(
         }
         startup::tick_32k_cur = startup::tick_cur.wrapping_add(20 * 16);
         core::ptr::write_volatile(reg8(0x0080_074c), 0x00);
+        vendor_clock_dly(6);
         core::ptr::write_volatile(reg8(0x0080_074c), 0x90);
+        vendor_clock_dly(4);
         core::ptr::write_volatile(reg8(0x0080_074f), 0x01);
     }
     pm_wait_xtal_ready();
@@ -894,6 +1305,7 @@ pub extern "C" fn pm_long_sleep_wakeup(
 
 #[cfg(feature = "chip-8258")]
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.cpu_long_sleep_wakeup_32k_xtal")]
 pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     mode: u32,
     wakeup_src: u32,
@@ -964,7 +1376,13 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
         analog::write(0x2b, 0xde);
         sleep_mode_no_ret = 1;
         an7 = 5;
-        mode2c = 0xc0;
+        if !has_timer {
+            let ab = u8::from(irq_enabled);
+            switch_ext32kpad_to_int32krc(ab | 0xc0 | (ab << 3));
+            mode2c = 0x00;
+        } else {
+            mode2c = 0xc0;
+        }
     }
     let wake_cmp = ((wakeup_src_u8 & PM_WAKEUP_COMPARATOR_BITS) != 0) as u8;
     if sleep_mode_u8 == 0 {
@@ -987,7 +1405,7 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     }
     analog::write(0x20, 0x77);
     unsafe {
-        let sr = startup::g_pm_r_delay_us.suspend_ret_r_delay_us as u32;
+        let sr = core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us) as u32;
         analog::write(0x1f, (((sr << 8) + (CRYSTAL32768_TICK_PER_32CYCLE >> 1)) / CRYSTAL32768_TICK_PER_32CYCLE) as u8);
         let dt = core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_sub(start);
         let wake_tick = if startup::pm_long_suspend != 0 {
@@ -1000,10 +1418,14 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
         core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
         core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
         core::ptr::write_volatile(reg8(0x0080_074f), 0x08);
+        vendor_clock_dly(10);
+        vendor_clock_dly(6);
         while (core::ptr::read_volatile(reg8(0x0080_074f).cast_const()) & 0x08) != 0 {}
         core::ptr::write_volatile(reg8(0x0080_074c), 0x20);
     }
-    if (analog::read(0x44) & !WAKEUP_STATUS_ALL) == 0 {
+    // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
+    // were enough to perturb PM entry on real hardware.
+    if wake44_gate_ready(analog::read(0x44)) {
         sleep_start();
     }
     if sleep_mode_u8 != 0 {
@@ -1025,7 +1447,9 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
         }
         startup::tick_32k_cur = startup::tick_cur.wrapping_add(20 * 16);
         core::ptr::write_volatile(reg8(0x0080_074c), 0x00);
+        vendor_clock_dly(6);
         core::ptr::write_volatile(reg8(0x0080_074c), 0x90);
+        vendor_clock_dly(5);
         core::ptr::write_volatile(reg8(0x0080_074f), 0x01);
     }
     pm_wait_xtal_ready();
@@ -1057,25 +1481,25 @@ fn decode_mode(raw: u32) -> SleepMode {
 }
 
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.check_32k_clk_stable")]
+#[unsafe(link_section = ".text.check_32k_clk_stable")]
 pub extern "C" fn check_32k_clk_stable() {
     startup::startup_pm_wait_xtal_ready();
 }
 
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.pm_get_32k_tick")]
+#[unsafe(link_section = ".text.pm_get_32k_tick")]
 pub extern "C" fn pm_get_32k_tick() -> u32 {
     startup::startup_pm_get_32k_tick()
 }
 
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.pm_wait_xtal_ready")]
+#[unsafe(link_section = ".text.pm_wait_xtal_ready")]
 pub extern "C" fn pm_wait_xtal_ready() {
     startup::startup_pm_wait_xtal_ready();
 }
 
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.start_reboot")]
+#[unsafe(link_section = ".text.start_reboot")]
 pub extern "C" fn start_reboot() -> ! {
     startup::startup_start_reboot()
 }
@@ -1092,7 +1516,7 @@ pub extern "C" fn sleep_start() {
 }
 
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.cpu_stall")]
+#[unsafe(link_section = ".text.cpu_stall")]
 pub extern "C" fn cpu_stall(wakeup_src: u32, interval_us: u32, sysclktick: u32) -> u32 {
     startup::startup_cpu_stall(wakeup_src, interval_us, sysclktick)
 }
@@ -1118,7 +1542,7 @@ pub extern "C" fn cpu_set_gpio_wakeup(pin: u32, pol: u32, en: i32) {
 }
 
 #[unsafe(no_mangle)]
-#[unsafe(link_section = ".ram_code.cpu_wakeup_init")]
+#[unsafe(link_section = ".text.cpu_wakeup_init")]
 pub extern "C" fn cpu_wakeup_init() {
     startup::startup_cpu_wakeup_init();
 }
