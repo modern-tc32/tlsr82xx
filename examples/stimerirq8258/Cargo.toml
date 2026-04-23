@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-stimerirq8258"
+name = "stimerirq8258"
 path = "src/main.rs"
 
 [dependencies]

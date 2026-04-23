@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-ble-beacon8258"
+name = "ble_beacon8258"
 path = "src/main.rs"
 
 [features]

@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-ble-ota-boot8258"
+name = "ble_ota_boot8258"
 path = "src/main.rs"
 
 [features]

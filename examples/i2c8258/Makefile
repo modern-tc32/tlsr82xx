@@ -7,16 +7,16 @@ TC32_CARGO ?= $(TC32_TOOLCHAIN)/bin/cargo
 TC32_RUSTC ?= $(TC32_TOOLCHAIN)/bin/rustc
 TC32_LLVM_BIN ?= $(TC32_TOOLCHAIN)/llvm/bin
 TARGET_DIR := ../../target/$(TARGET)
-ELF_debug := $(TARGET_DIR)/debug/tlsr82xx-i2c8258
-ELF_release := $(TARGET_DIR)/release/tlsr82xx-i2c8258
+ELF_debug := $(TARGET_DIR)/debug/i2c8258
+ELF_release := $(TARGET_DIR)/release/i2c8258
 BIN_debug := $(ELF_debug).bin
 BIN_release := $(ELF_release).bin
 all: debug
 
 help:
 	@echo "Targets:"
-	@echo "  make debug        Build debug ELF and tlsr82xx-i2c8258.bin"
-	@echo "  make release      Build release ELF and tlsr82xx-i2c8258.bin"
+	@echo "  make debug        Build debug ELF and i2c8258.bin"
+	@echo "  make release      Build release ELF and i2c8258.bin"
 	@echo "  make bin          Alias for debug"
 	@echo "  make bin-release  Alias for release"
 	@echo "  make clean        Remove example build outputs"

@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-buttons8258"
+name = "buttons8258"
 path = "src/main.rs"
 
 [features]

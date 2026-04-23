@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-flash8258"
+name = "flash8258"
 path = "src/main.rs"
 
 [features]

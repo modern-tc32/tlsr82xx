@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-timer08258"
+name = "timer08258"
 path = "src/main.rs"
 
 [dependencies]

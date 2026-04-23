@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-radio-selftest8258"
+name = "radio_selftest8258"
 path = "src/main.rs"
 
 [features]

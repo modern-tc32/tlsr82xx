@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-stimerpoll8258"
+name = "stimerpoll8258"
 path = "src/main.rs"
 
 [dependencies]

@@ -6,7 +6,7 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "tlsr82xx-i2c8258"
+name = "i2c8258"
 path = "src/main.rs"
 
 [features]
