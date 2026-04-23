@@ -7,6 +7,10 @@ use embedded_hal::digital::{
 };
 
 use crate::{analog, pac};
+#[cfg(feature = "chip-8258")]
+use crate::regs8258::{
+    AREG_GPIO_PB_DS, AREG_GPIO_PB_IE, AREG_GPIO_PC_DS, AREG_GPIO_PC_IE,
+};
 
 const PORT_A: u8 = 0;
 const PORT_B: u8 = 1;
@@ -403,22 +407,22 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
         {
             match PORT {
                 PORT_B => {
-                    let mut value = analog::read(0xbd);
+                    let mut value = analog::read(AREG_GPIO_PB_IE);
                     if enabled {
                         value |= Self::mask();
                     } else {
                         value &= !Self::mask();
                     }
-                    analog::write(0xbd, value);
+                    analog::write(AREG_GPIO_PB_IE, value);
                 }
                 PORT_C => {
-                    let mut value = analog::read(0xc0);
+                    let mut value = analog::read(AREG_GPIO_PC_IE);
                     if enabled {
                         value |= Self::mask();
                     } else {
                         value &= !Self::mask();
                     }
-                    analog::write(0xc0, value);
+                    analog::write(AREG_GPIO_PC_IE, value);
                 }
                 _ => Self::modify_reg(0x01, enabled),
             }
@@ -446,22 +450,22 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
         {
             match PORT {
                 PORT_B => {
-                    let mut value = analog::read(0xbf);
+                    let mut value = analog::read(AREG_GPIO_PB_DS);
                     if strong {
                         value |= Self::mask();
                     } else {
                         value &= !Self::mask();
                     }
-                    analog::write(0xbf, value);
+                    analog::write(AREG_GPIO_PB_DS, value);
                 }
                 PORT_C => {
-                    let mut value = analog::read(0xc2);
+                    let mut value = analog::read(AREG_GPIO_PC_DS);
                     if strong {
                         value |= Self::mask();
                     } else {
                         value &= !Self::mask();
                     }
-                    analog::write(0xc2, value);
+                    analog::write(AREG_GPIO_PC_DS, value);
                 }
                 _ => Self::modify_reg(0x05, strong),
             }
@@ -767,23 +771,23 @@ pub(crate) fn set_input_enabled_raw(raw_pin: RawPin, enabled: bool) {
     {
         match port {
             PORT_B => {
-                let mut reg = analog::read(0xbd);
+                let mut reg = analog::read(AREG_GPIO_PB_IE);
                 if enabled {
                     reg |= mask;
                 } else {
                     reg &= !mask;
                 }
-                analog::write(0xbd, reg);
+                analog::write(AREG_GPIO_PB_IE, reg);
                 return;
             }
             PORT_C => {
-                let mut reg = analog::read(0xc0);
+                let mut reg = analog::read(AREG_GPIO_PC_IE);
                 if enabled {
                     reg |= mask;
                 } else {
                     reg &= !mask;
                 }
-                analog::write(0xc0, reg);
+                analog::write(AREG_GPIO_PC_IE, reg);
                 return;
             }
             _ => {}

@@ -3,18 +3,11 @@ use crate::mmio::{reg32, reg8};
 use crate::pac;
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
-    FLD_IRQ_SYSTEM_TIMER, FLD_TMR0_EN, FLD_TMR0_MODE, REG_IRQ_MASK, REG_TMR0_CAPT, REG_TMR0_TICK,
+    FLD_IRQ_SYSTEM_TIMER, FLD_TMR0_EN, FLD_TMR0_MODE, REG_IRQ_MASK, REG_SYSTEM_TICK,
+    REG_SYSTEM_TICK_CTRL, REG_SYSTEM_TICK_IRQ, REG_SYSTEM_TICK_MODE, REG_TMR0_CAPT, REG_TMR0_TICK,
     REG_TMR_CTRL, REG_TMR_STA,
 };
 
-#[cfg(feature = "chip-8258")]
-const REG_SYSTEM_TICK_IRQ: usize = 0x0080_0744;
-#[cfg(feature = "chip-8258")]
-const REG_SYSTEM_TICK: usize = 0x0080_0740;
-#[cfg(feature = "chip-8258")]
-const REG_SYSTEM_TICK_MODE: usize = 0x0080_074c;
-#[cfg(feature = "chip-8258")]
-const REG_SYSTEM_TICK_CTRL: usize = 0x0080_074f;
 #[cfg(feature = "chip-8258")]
 const FLD_SYSTEM_IRQ_MASK: u8 = 1 << 1;
 #[cfg(feature = "chip-8258")]

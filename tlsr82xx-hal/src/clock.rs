@@ -1,7 +1,11 @@
 use crate::analog;
 use crate::mmio::reg8;
 #[cfg(feature = "chip-8258")]
-use crate::regs8258::{AREG_FLASH_VOLTAGE, REG_CLK_SEL};
+use crate::regs8258::{
+    AREG_0X30, AREG_0X33, AREG_0X86, AREG_0X87, AREG_0X88, AREG_0XC7,
+    AREG_0XC8, AREG_0XCB, AREG_0XCF, AREG_CLK_SETTING, AREG_FLASH_VOLTAGE,
+    REG_CLK_SEL,
+};
 use crate::startup::{self, StartupState, tl_24mrc_cal};
 
 #[repr(u8)]
@@ -64,52 +68,52 @@ pub extern "C" fn clock_init(sys_clk: u8) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rc_24m_cal() {
-    analog::write(0xc8, 0x80);
+    analog::write(AREG_0XC8, 0x80);
 
-    let clk = analog::read(0x30) | 0x80;
-    analog::write(0x30, clk);
+    let clk = analog::read(AREG_0X30) | 0x80;
+    analog::write(AREG_0X30, clk);
 
-    analog::write(0xc7, 0x0e);
-    analog::write(0xc7, 0x0f);
+    analog::write(AREG_0XC7, 0x0e);
+    analog::write(AREG_0XC7, 0x0f);
 
-    while (analog::read(0xcf) & 0x80) == 0 {}
+    while (analog::read(AREG_0XCF) & 0x80) == 0 {}
 
-    let cal = analog::read(0xcb);
-    analog::write(0x33, cal);
+    let cal = analog::read(AREG_0XCB);
+    analog::write(AREG_0X33, cal);
 
-    let clk = analog::read(0x30) & 0x7f;
-    analog::write(0x30, clk);
-    analog::write(0xc7, 0x0e);
+    let clk = analog::read(AREG_0X30) & 0x7f;
+    analog::write(AREG_0X30, clk);
+    analog::write(AREG_0XC7, 0x0e);
 
     unsafe {
-        tl_24mrc_cal = analog::read(0x33);
+        tl_24mrc_cal = analog::read(AREG_0X33);
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn doubler_calibration() {
-    analog::write(0x86, 0xbb);
+    analog::write(AREG_0X86, 0xbb);
 
-    let val = analog::read(0x82) & 0x7f;
-    analog::write(0x82, val);
+    let val = analog::read(AREG_CLK_SETTING) & 0x7f;
+    analog::write(AREG_CLK_SETTING, val);
 
-    let val = (analog::read(0x87) & !0x03) | 0x02;
-    analog::write(0x87, val);
+    let val = (analog::read(AREG_0X87) & !0x03) | 0x02;
+    analog::write(AREG_0X87, val);
 
-    let val = analog::read(0x87) | 0x04;
-    analog::write(0x87, val);
+    let val = analog::read(AREG_0X87) | 0x04;
+    analog::write(AREG_0X87, val);
 
-    let high = analog::read(0x88) & 0x1f;
-    let low = analog::read(0x87) & 0x07;
-    analog::write(0x87, (high << 3) | low);
+    let high = analog::read(AREG_0X88) & 0x1f;
+    let low = analog::read(AREG_0X87) & 0x07;
+    analog::write(AREG_0X87, (high << 3) | low);
 
-    let val = analog::read(0x82) | 0x80;
-    analog::write(0x82, val);
+    let val = analog::read(AREG_CLK_SETTING) | 0x80;
+    analog::write(AREG_CLK_SETTING, val);
 
-    let val = analog::read(0x87) & 0xfd;
-    analog::write(0x87, val);
+    let val = analog::read(AREG_0X87) & 0xfd;
+    analog::write(AREG_0X87, val);
 
-    analog::write(0x86, 0xfb);
+    analog::write(AREG_0X86, 0xfb);
 }
 
 #[inline(always)]

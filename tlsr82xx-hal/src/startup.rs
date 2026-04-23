@@ -1,14 +1,17 @@
 use crate::mmio::{reg16, reg32, reg8};
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
-    ANA_32K_TICK_BYTE0, ANA_32K_TICK_BYTE1, ANA_32K_TICK_BYTE2, ANA_32K_TICK_BYTE3, ANA_REG_0X02,
-    ANA_REG_0X27, ANA_REG_0X28, ANA_REG_0X29, ANA_REG_0X2A, ANA_REG_0X8A, ANA_REG_0X8C,
-    ANA_USB_DP_PULLUP, ANA_USB_POWER, AREG_CLK_SETTING, REG_ANA_POWER_CTRL, REG_CLK_EN0,
-    REG_CLK_EN1, REG_CLK_EN2, REG_DCDC_CTRL, REG_DFIFO0_ADDR, REG_DFIFO0_SIZE, REG_DFIFO1_ADDR,
-    REG_DMA_CHN_EN, REG_GPIO_PE_IE, REG_GPIO_WAKEUP_IRQ, REG_IRQ_MASK, REG_MCU_WAKEUP_MASK,
-    REG_MSPI_CTRL, REG_MSPI_DATA, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG, REG_PWDN_CTRL,
-    REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI, REG_SYSTEM_TICK,
-    REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
+    AREG_32K_TICK_BYTE0, AREG_32K_TICK_BYTE1, AREG_32K_TICK_BYTE2, AREG_32K_TICK_BYTE3, AREG_0X01,
+    AREG_0X02, AREG_0X27, AREG_0X28, AREG_0X29, AREG_0X2A, AREG_0X44,
+    AREG_0X7E, AREG_0X7F, AREG_0X8C, AREG_DEEP2, AREG_USB_DP_PULLUP,
+    AREG_USB_POWER, AREG_XO_SETTING, AREG_CLK_SETTING, REG_ANA_POWER_CTRL,
+    REG_BASE_ADDR, REG_CLK_EN0, REG_CLK_EN1, REG_CLK_EN2, REG_DFIFO0_ADDR, REG_DFIFO0_SIZE,
+    REG_DFIFO1_ADDR, REG_DMA_CHN_EN, REG_GPIO_PA_GPIO, REG_GPIO_PA_IE, REG_GPIO_PA_OEN,
+    REG_GPIO_PE_IE, REG_GPIO_WAKEUP_IRQ, REG_IRQ_MASK, REG_MCU_WAKEUP_MASK, REG_MSPI_CTRL,
+    REG_MSPI_DATA, REG_MUX_FUNC_A2, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG,
+    REG_PWDN_CTRL, REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI,
+    REG_SYSTEM_32K_TICK_RD, REG_SYSTEM_TICK, REG_SYSTEM_TICK_CTRL, REG_TL_MULTI_ADDR,
+    REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
 };
 use crate::{analog, clock, gpio, interrupt, timer};
 
@@ -372,7 +375,7 @@ pub extern "C" fn LoadTblCmdSet(pt: *const TblCmdSet, size: i32) -> i32 {
         if (cmd_raw & TCMD_UNDER_WR) != 0 {
             match cmd_raw & TCMD_MASK {
                 TCMD_WRITE => unsafe {
-                    core::ptr::write_volatile(reg8(0x0080_0000 | (entry.adr as usize)), entry.dat)
+                    core::ptr::write_volatile(reg8(REG_BASE_ADDR | (entry.adr as usize)), entry.dat)
                 },
                 TCMD_WAREG => analog::write(entry.adr as u8, entry.dat),
                 TCMD_WAIT => {
@@ -395,19 +398,19 @@ fn boot_init_pa7_sws() {
     // Force PA7 to SWire and input-enabled as early as possible.
     // This keeps SWD/SWS attach reliable even if PM flow fails later.
     unsafe {
-        let mux_pa_4_7 = reg8(0x0080_05a9);
+        let mux_pa_4_7 = reg8(REG_MUX_FUNC_A2);
         let mux = core::ptr::read_volatile(mux_pa_4_7.cast_const()) & !(0b11 << 6);
         core::ptr::write_volatile(mux_pa_4_7, mux);
 
-        let gpio_func = reg8(0x0080_0586);
+        let gpio_func = reg8(REG_GPIO_PA_GPIO);
         let func = core::ptr::read_volatile(gpio_func.cast_const()) & !0x80;
         core::ptr::write_volatile(gpio_func, func);
 
-        let gpio_ie = reg8(0x0080_0581);
+        let gpio_ie = reg8(REG_GPIO_PA_IE);
         let ie = core::ptr::read_volatile(gpio_ie.cast_const()) | 0x80;
         core::ptr::write_volatile(gpio_ie, ie);
 
-        let gpio_oen = reg8(0x0080_0582);
+        let gpio_oen = reg8(REG_GPIO_PA_OEN);
         let oen = core::ptr::read_volatile(gpio_oen.cast_const()) | 0x80;
         core::ptr::write_volatile(gpio_oen, oen);
     }
@@ -442,9 +445,9 @@ pub extern "C" fn __tc32_boot_init() -> ! {
         __tc32_flash_wakeup();
         __tc32_efuse_delay();
 
-        let wake_flag = __tc32_analog_read_u8(0x7e);
-        let wake_status = __tc32_analog_read_u8(0x44);
-        let pm_status = __tc32_analog_read_u8(0x7f);
+        let wake_flag = __tc32_analog_read_u8(AREG_0X7E);
+        let wake_status = __tc32_analog_read_u8(AREG_0X44);
+        let pm_status = __tc32_analog_read_u8(AREG_0X7F);
         // VENDOR-DIFF:
         // vendor boot code treats any non-zero `ana 0x7e` as a PM wake marker.
         // Keep the check restricted to vendor PM mode encodings to reject stale
@@ -456,7 +459,7 @@ pub extern "C" fn __tc32_boot_init() -> ! {
         // `0x3a` for persisted testcase state, and clobbering it here makes the
         // example restart from testcase 1 after each wake.
         if boot_init_has_saved_pm_mode(wake_flag, wake_status, pm_status) {
-            core::ptr::write_volatile(reg8(0x80063e), tl_multi_addr);
+            core::ptr::write_volatile(reg8(REG_TL_MULTI_ADDR), tl_multi_addr);
         } else {
             __tc32_fill_stack_pattern(
                 core::ptr::addr_of_mut!(_end_custom_bss_),
@@ -564,14 +567,14 @@ pub extern "C" fn irq_disable() -> u8 {
 
 pub fn startup_pm_get_32k_tick() -> u32 {
     loop {
-        let prev = ((analog::read(ANA_32K_TICK_BYTE3) as u32) << 24)
-            | ((analog::read(ANA_32K_TICK_BYTE2) as u32) << 16)
-            | ((analog::read(ANA_32K_TICK_BYTE1) as u32) << 8)
-            | analog::read(ANA_32K_TICK_BYTE0) as u32;
-        let value = ((analog::read(ANA_32K_TICK_BYTE3) as u32) << 24)
-            | ((analog::read(ANA_32K_TICK_BYTE2) as u32) << 16)
-            | ((analog::read(ANA_32K_TICK_BYTE1) as u32) << 8)
-            | analog::read(ANA_32K_TICK_BYTE0) as u32;
+        let prev = ((analog::read(AREG_32K_TICK_BYTE3) as u32) << 24)
+            | ((analog::read(AREG_32K_TICK_BYTE2) as u32) << 16)
+            | ((analog::read(AREG_32K_TICK_BYTE1) as u32) << 8)
+            | analog::read(AREG_32K_TICK_BYTE0) as u32;
+        let value = ((analog::read(AREG_32K_TICK_BYTE3) as u32) << 24)
+            | ((analog::read(AREG_32K_TICK_BYTE2) as u32) << 16)
+            | ((analog::read(AREG_32K_TICK_BYTE1) as u32) << 8)
+            | analog::read(AREG_32K_TICK_BYTE0) as u32;
 
         let delta = value.wrapping_sub(prev);
         if delta <= 1 {
@@ -687,7 +690,7 @@ pub fn startup_sleep_start() {
         fn start_suspend();
     }
 
-    analog::write(0x34, 0x87);
+    analog::write(AREG_USB_POWER, 0x87);
     unsafe {
         core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 0);
         core::ptr::write_volatile(reg8(REG_MSPI_DATA), 0xb9);
@@ -736,7 +739,7 @@ pub fn startup_sleep_start() {
     unsafe {
         core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 1);
     }
-    analog::write(0x34, 0x80);
+    analog::write(AREG_USB_POWER, 0x80);
 
     let nopnum = unsafe { g_pm_xtal_stable_suspend_nopnum };
     let mut delay = 0u32;
@@ -866,37 +869,37 @@ pub fn startup_cpu_wakeup_init() {
     }
 
     analog::write(AREG_CLK_SETTING, 0x64);
-    analog::write(ANA_USB_POWER, 0x80);
-    analog::write(ANA_USB_DP_PULLUP, 0x38);
-    analog::write(ANA_REG_0X8C, 0x02);
-    analog::write(ANA_REG_0X02, 0xa2);
-    analog::write(ANA_REG_0X27, 0x00);
-    analog::write(ANA_REG_0X28, 0x00);
-    analog::write(ANA_REG_0X29, 0x00);
-    analog::write(ANA_REG_0X2A, 0x00);
+    analog::write(AREG_USB_POWER, 0x80);
+    analog::write(AREG_USB_DP_PULLUP, 0x38);
+    analog::write(AREG_0X8C, 0x02);
+    analog::write(AREG_0X02, 0xa2);
+    analog::write(AREG_0X27, 0x00);
+    analog::write(AREG_0X28, 0x00);
+    analog::write(AREG_0X29, 0x00);
+    analog::write(AREG_0X2A, 0x00);
 
     unsafe {
         core::ptr::write_volatile(reg32(REG_PM_RET_CTRL0), 0x0404_0404);
         core::ptr::write_volatile(reg32(REG_PM_RET_CTRL1), 0x0404_0404);
         core::ptr::write_volatile(reg8(REG_PM_RET_BYTE), 0x04);
-        core::ptr::write_volatile(crate::mmio::reg16(REG_DCDC_CTRL), 0);
+        core::ptr::write_volatile(crate::mmio::reg16(REG_SYSTEM_32K_TICK_RD), 0);
     }
 
     let sram_shutdown_sel =
         unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) };
-    let ana_7f = analog::read(0x7f);
-    let ana_3c = analog::read(0x3c);
+    let ana_7f = analog::read(AREG_0X7F);
+    let ana_3c = analog::read(AREG_DEEP2);
     if sram_shutdown_sel == 1 {
-        analog::write(0x01, 0x3c);
+        analog::write(AREG_0X01, 0x3c);
     } else {
-        analog::write(0x01, 0x4c);
+        analog::write(AREG_0X01, 0x4c);
     }
 
     if (ana_7f & 0x01) != 0 {
         unsafe {
             pmParam.mcu_status = MCU_STATUS_DEEP_BACK;
         }
-        analog::write(0x3c, ana_3c & 0xfd);
+        analog::write(AREG_DEEP2, ana_3c & 0xfd);
         unsafe {
             core::ptr::write_volatile(reg8(REG_SYSTEM_TICK_CTRL), 0x01);
         }
@@ -909,7 +912,7 @@ pub fn startup_cpu_wakeup_init() {
     }
 
     unsafe {
-        pmParam.wakeup_src = analog::read(0x44);
+        pmParam.wakeup_src = analog::read(AREG_0X44);
         pmParam.is_pad_wakeup = if (pmParam.wakeup_src & 0x0a) == 0x08 {
             1
         } else {
@@ -946,7 +949,7 @@ pub fn startup_cpu_wakeup_init() {
         let value = core::ptr::read_volatile(reg8(REG_GPIO_WAKEUP_IRQ).cast_const()) | 0x0c;
         core::ptr::write_volatile(reg8(REG_GPIO_WAKEUP_IRQ), value);
     }
-    let _ = (ANA_REG_0X8A, REG_PWDN_CTRL);
+    let _ = (AREG_XO_SETTING, REG_PWDN_CTRL);
 }
 
 #[inline(always)]
