@@ -137,7 +137,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tlsr82xx-pmled8258"
+name = "tlsr82xx-pm-long8258"
 version = "0.1.0"
 dependencies = [
  "embedded-hal",
@@ -146,7 +146,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "tlsr82xx-pmled8258-sleep-for-ms-vendor-probe"
+name = "tlsr82xx-pm-short8258"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "tlsr82xx-boards",
+ "tlsr82xx-hal",
+]
+
+[[package]]
+name = "tlsr82xx-pmled8258"
 version = "0.1.0"
 dependencies = [
  "embedded-hal",

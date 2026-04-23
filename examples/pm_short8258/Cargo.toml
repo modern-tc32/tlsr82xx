@@ -1,12 +1,12 @@
 [package]
-name = "tlsr82xx-pmled8258-sleep-for-ms-vendor-probe"
+name = "tlsr82xx-pm-short8258"
 version = "0.1.0"
 edition = "2021"
 publish = false
 build = "build.rs"
 
 [[bin]]
-name = "pmled8258_sleep_for_ms_vendor_probe"
+name = "pm_short8258"
 path = "src/main.rs"
 
 [features]

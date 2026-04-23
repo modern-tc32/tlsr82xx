@@ -6,7 +6,7 @@ The firmware cycles through PM test cases and shows startup/wakeup information v
 
 ## Current Test Matrix
 
-- API: `pm::Pm::long_sleep_32k(...)`
+- API: `pm::Pm::init(pm::Config::internal_rc()).long_sleep_32k(...)`
 - Wake source: `TIMER`
 - Sleep duration: `2s`
 - Cases:
@@ -24,15 +24,11 @@ The firmware cycles through PM test cases and shows startup/wakeup information v
 On first RAM initialization:
 - White+Yellow ON for `3s` (cycle-start marker).
 
-Then each active window shows `X-F-Y-S`:
+Then each active window shows `X-Y-S`:
 - `X` (white, long): wake class
   - `1` = cold boot
   - `2` = deep wake
   - `3/4/5` = deep-retention wake (8K/16K/32K)
-- `F` (white, short): startup wakeup-flag bucket (`PM_STARTUP_DBG_WAKEUP_FLAG`)
-  - `1` for raw `0`
-  - `2` for raw `1`
-  - `3` for all other values
 - `Y` (yellow, long): previous 32k source
   - `1` = RC32K
   - `2` = XTAL32K

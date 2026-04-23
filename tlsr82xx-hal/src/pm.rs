@@ -159,6 +159,39 @@ pub struct XtalStableTiming {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Config {
+    pub clock_32k: Clock32kSource,
+    pub wakeup_timing: WakeupTiming,
+    pub xtal_stable_timing: XtalStableTiming,
+}
+
+impl Config {
+    #[inline(always)]
+    pub const fn internal_rc() -> Self {
+        Self {
+            clock_32k: Clock32kSource::InternalRc,
+            wakeup_timing: WakeupTiming {
+                deep_r_delay_us: 1000,
+                suspend_ret_r_delay_us: 1000,
+            },
+            xtal_stable_timing: XtalStableTiming {
+                delay_us: 0x87,
+                loop_count: 10,
+                nop_count: 200,
+            },
+        }
+    }
+
+    #[inline(always)]
+    pub const fn external_crystal() -> Self {
+        Self {
+            clock_32k: Clock32kSource::ExternalCrystal,
+            ..Self::internal_rc()
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SleepRequest {
     pub mode: SleepMode,
     pub wakeup_src: WakeupSource,
@@ -170,41 +203,122 @@ pub struct SleepResult {
     pub raw: u32,
 }
 
-pub struct Pm;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct WakeupStatus(u8);
 
-impl Pm {
+impl WakeupStatus {
     #[inline(always)]
-    pub fn init(source: Clock32kSource) {
-        init(source);
+    pub const fn raw(self) -> u8 {
+        self.0
     }
 
     #[inline(always)]
-    pub fn configure_gpio_wakeup(raw_pin: gpio::RawPin, level: WakeupLevel, enabled: bool) {
+    pub const fn contains_timer(self) -> bool {
+        (self.0 & WAKEUP_STATUS_TIMER as u8) != 0
+    }
+
+    #[inline(always)]
+    pub const fn contains_pad(self) -> bool {
+        (self.0 & WAKEUP_STATUS_PAD as u8) != 0
+    }
+
+    #[inline(always)]
+    pub const fn contains_core(self) -> bool {
+        (self.0 & WAKEUP_STATUS_CORE as u8) != 0
+    }
+
+    #[inline(always)]
+    pub const fn contains_comparator(self) -> bool {
+        (self.0 & WAKEUP_STATUS_COMPARATOR as u8) != 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WakeInfo {
+    pub origin: WakeOrigin,
+    pub source: WakeupStatus,
+    pub is_pad_wakeup: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Pm {
+    config: Config,
+}
+
+impl Pm {
+    #[inline(always)]
+    pub fn init(config: Config) -> Self {
+        apply_config(config);
+        Self { config }
+    }
+
+    #[inline(always)]
+    pub fn reconfigure(&mut self, config: Config) {
+        apply_config(config);
+        self.config = config;
+    }
+
+    #[inline(always)]
+    pub fn config(&self) -> Config {
+        self.config
+    }
+
+    #[inline(always)]
+    pub fn wake_info(&self) -> WakeInfo {
+        wake_info()
+    }
+
+    #[inline(always)]
+    pub fn configure_gpio_wakeup(
+        &mut self,
+        raw_pin: gpio::RawPin,
+        level: WakeupLevel,
+        enabled: bool,
+    ) {
         configure_gpio_wakeup(raw_pin, level, enabled);
     }
 
     #[inline(always)]
-    pub fn sleep(request: SleepRequest) -> SleepResult {
+    pub fn sleep(&mut self, request: SleepRequest) -> SleepResult {
         SleepResult {
-            raw: sleep_until_tick(request.mode, request.wakeup_src, request.wakeup_tick),
+            raw: sleep_until_tick_impl(request.mode, request.wakeup_src, request.wakeup_tick),
         }
     }
 
     #[inline(always)]
-    pub fn sleep_for_ms(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32) -> SleepResult {
+    pub fn sleep_ms(
+        &mut self,
+        mode: SleepMode,
+        wakeup_src: WakeupSource,
+        duration_ms: u32,
+    ) -> SleepResult {
         SleepResult {
-            raw: sleep_for_ms(mode, wakeup_src, duration_ms),
+            raw: sleep_for_ms_impl(mode, wakeup_src, duration_ms),
+        }
+    }
+
+    #[inline(always)]
+    pub fn sleep_until_tick(
+        &mut self,
+        mode: SleepMode,
+        wakeup_src: WakeupSource,
+        wakeup_tick: u32,
+    ) -> SleepResult {
+        SleepResult {
+            raw: sleep_until_tick_impl(mode, wakeup_src, wakeup_tick),
         }
     }
 
     #[inline(always)]
     pub fn long_sleep_32k(
+        &mut self,
         mode: SleepMode,
         wakeup_src: WakeupSource,
         duration_ticks_32k: u32,
     ) -> SleepResult {
         SleepResult {
-            raw: long_sleep_32k(mode, wakeup_src, duration_ticks_32k),
+            raw: long_sleep_32k_impl(mode, wakeup_src, duration_ticks_32k),
         }
     }
 }
@@ -258,7 +372,15 @@ pub extern "C" fn pm_set_xtal_stable_timer_param(delay_us: u32, loopnum: u32, no
 static mut CLOCK_32K_SOURCE: Clock32kSource = Clock32kSource::InternalRc;
 
 #[inline(always)]
-pub fn init(source: Clock32kSource) {
+fn apply_config(config: Config) {
+    init_32k_source(config.clock_32k);
+    set_wakeup_timing(config.wakeup_timing);
+    set_xtal_stable_timing(config.xtal_stable_timing);
+    sync_sys_tick_per_us();
+}
+
+#[inline(always)]
+fn init_32k_source(source: Clock32kSource) {
     #[cfg(feature = "chip-8258")]
     if source == Clock32kSource::InternalRc {
         // Vendor clock_32k_init(0): internal RC 32k.
@@ -344,6 +466,15 @@ pub fn state() -> startup::StartupState {
 }
 
 #[inline(always)]
+pub fn wake_info() -> WakeInfo {
+    WakeInfo {
+        origin: wake_origin(),
+        source: WakeupStatus(wakeup_source_raw()),
+        is_pad_wakeup: is_pad_wakeup(),
+    }
+}
+
+#[inline(always)]
 pub fn wake_origin() -> WakeOrigin {
     match startup::startup_state() {
         startup::StartupState::Boot => WakeOrigin::ColdBoot,
@@ -398,7 +529,7 @@ pub fn configure_gpio_wakeup(raw_pin: gpio::RawPin, level: WakeupLevel, enabled:
 }
 
 #[inline(always)]
-pub fn sleep_until_tick(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: u32) -> u32 {
+fn sleep_until_tick_impl(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: u32) -> u32 {
     #[cfg(feature = "chip-8258")]
     {
         if mode.is_suspend() {
@@ -435,7 +566,7 @@ pub fn sleep_until_tick(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick: 
 }
 
 #[inline(always)]
-pub fn sleep_for_ms(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32) -> u32 {
+fn sleep_for_ms_impl(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32) -> u32 {
     #[cfg(not(feature = "chip-8258"))]
     {
         let _ = (mode, wakeup_src, duration_ms);
@@ -464,7 +595,7 @@ pub fn sleep_for_ms(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32)
         }
         let hz = hz_32k(source) as u64;
         let ticks_32k = ((duration_ms as u64).saturating_mul(hz) / 1000).max(1);
-        return long_sleep_32k(mode, wakeup_src, ticks_32k.min(u32::MAX as u64) as u32);
+        return long_sleep_32k_impl(mode, wakeup_src, ticks_32k.min(u32::MAX as u64) as u32);
     }
 
     let ticks_per_us = timer::sys_tick_per_us();
@@ -473,12 +604,12 @@ pub fn sleep_for_ms(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32)
             .saturating_mul(1000)
             .saturating_mul(ticks_per_us),
     );
-    sleep_until_tick(mode, wakeup_src, wakeup_tick)
+    sleep_until_tick_impl(mode, wakeup_src, wakeup_tick)
     }
 }
 
 #[inline(always)]
-pub fn long_sleep_32k(
+fn long_sleep_32k_impl(
     mode: SleepMode,
     wakeup_src: WakeupSource,
     duration_ticks_32k: u32,

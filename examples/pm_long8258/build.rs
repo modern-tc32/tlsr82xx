@@ -102,10 +102,7 @@ fn main() {
     println!("cargo:rustc-link-arg=max-page-size=0x8000");
     println!("cargo:rustc-link-arg=-z");
     println!("cargo:rustc-link-arg=common-page-size=0x8000");
-    println!(
-        "cargo:rustc-link-arg=-T{}",
-        local_linker.display()
-    );
+    println!("cargo:rustc-link-arg=-T{}", local_linker.display());
     for object in &objects {
         println!("cargo:rustc-link-arg={}", object.display());
     }
