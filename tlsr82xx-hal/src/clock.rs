@@ -2,11 +2,10 @@ use crate::analog;
 use crate::mmio::reg8;
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
-    AREG_0X30, AREG_0X33, AREG_0X86, AREG_0X87, AREG_0X88, AREG_0XC7,
-    AREG_0XC8, AREG_0XCB, AREG_0XCF, AREG_CLK_SETTING, AREG_FLASH_VOLTAGE,
-    REG_CLK_SEL,
+    AREG_0X30, AREG_0X33, AREG_0X86, AREG_0X87, AREG_0X88, AREG_0XC7, AREG_0XC8, AREG_0XCB,
+    AREG_0XCF, AREG_CLK_SETTING, AREG_FLASH_VOLTAGE, REG_CLK_SEL,
 };
-use crate::startup::{self, StartupState, tl_24mrc_cal};
+use crate::startup::{self, tl_24mrc_cal, StartupState};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

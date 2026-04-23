@@ -201,7 +201,10 @@ pub fn configure_system_timer_periodic_irq(period_ticks: u32) {
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_PERIODIC_IRQ_TICKS, period_ticks);
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_IRQ_COUNT, 0);
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_NEXT_COMPARE, first_compare);
-        core::ptr::write_volatile(&raw mut TLSR82XX_SYSTEM_TIMER_IRQ_PERIOD_TICKS, period_ticks);
+        core::ptr::write_volatile(
+            &raw mut TLSR82XX_SYSTEM_TIMER_IRQ_PERIOD_TICKS,
+            period_ticks,
+        );
     }
     clear_system_timer_irq_status();
     set_system_timer_irq_capture(first_compare);
@@ -228,8 +231,10 @@ pub fn system_timer_periodic_irq_fired() {
 #[unsafe(link_section = ".ram_code")]
 pub extern "C" fn tlsr82xx_system_timer_irq_service() {
     if system_timer_periodic_irq_enabled() {
-        let period = unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_PERIODIC_IRQ_TICKS) };
-        let prev_compare = unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_NEXT_COMPARE) };
+        let period =
+            unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_PERIODIC_IRQ_TICKS) };
+        let prev_compare =
+            unsafe { core::ptr::read_volatile(&raw const SYSTEM_TIMER_NEXT_COMPARE) };
         let next = prev_compare.wrapping_add(period) & !0x07;
         unsafe {
             core::ptr::write_volatile(&raw mut SYSTEM_TIMER_NEXT_COMPARE, next);
@@ -265,10 +270,7 @@ pub fn system_timer_irq_phase() -> bool {
 
 #[cfg(feature = "chip-8258")]
 pub fn register_system_timer_irq_callback(callback: crate::interrupt::RamVoidHandler) {
-    crate::interrupt::assert_ram_code_addr(
-        callback.get() as usize,
-        "system timer irq callback",
-    );
+    crate::interrupt::assert_ram_code_addr(callback.get() as usize, "system timer irq callback");
     unsafe {
         core::ptr::write_volatile(&raw mut SYSTEM_TIMER_IRQ_CALLBACK, Some(callback.get()));
     }

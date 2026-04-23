@@ -4,14 +4,13 @@ use crate::{analog, gpio, interrupt, startup, timer};
 use crate::mmio::{reg16, reg32, reg8};
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
-    AREG_0X02, AREG_0X03, AREG_0X04, AREG_0X05, AREG_0X07, AREG_0X1F,
-    AREG_0X20, AREG_0X26, AREG_0X2B, AREG_0X2C, AREG_0X2D, AREG_0X30,
-    AREG_0X31, AREG_0X32, AREG_0X44, AREG_0X7E, AREG_0X7F, AREG_0XC6,
-    AREG_0XC9, AREG_0XCA, AREG_0XCF, AREG_DEEP2, REG_CLK_SEL,
-    REG_GPIO_PC_GPIO, REG_MCU_WAKEUP_MASK, REG_PM_RET_SRAM_CTRL, REG_PWM1_CMP, REG_PWM1_MAX,
-    REG_PWM_CLK, REG_PWM_ENABLE, REG_PWDN_CTRL, REG_SYSTEM_32K_TICK_CAL, REG_SYSTEM_32K_TICK_RD,
-    REG_SYSTEM_TICK, REG_SYSTEM_TICK_CTRL, REG_SYSTEM_TICK_MODE, REG_SYSTEM_WAKEUP_TICK,
-    REG_TL_MULTI_ADDR,
+    AREG_0X03, AREG_0X04, AREG_0X20, AREG_0X2B, AREG_0X2C, AREG_0X2D, AREG_0X30, AREG_0X31,
+    AREG_0X32, AREG_0X7E, AREG_0XC6, AREG_0XC9, AREG_0XCA, AREG_0XCF, AREG_CLK_2M_RC, AREG_DEEP2,
+    AREG_LDO_SETTING1, AREG_PM_STATUS, AREG_PWDN_SETTING1, AREG_R_DLY1, AREG_WAKEUP_EN,
+    AREG_WAKEUP_STATUS, REG_CLK_SEL, REG_GPIO_PC_GPIO, REG_MCU_WAKEUP_MASK, REG_PM_RET_SRAM_CTRL,
+    REG_PWDN_CTRL, REG_PWM1_CMP, REG_PWM1_MAX, REG_PWM_CLK, REG_PWM_ENABLE,
+    REG_SYSTEM_32K_TICK_CAL, REG_SYSTEM_32K_TICK_RD, REG_SYSTEM_TICK, REG_SYSTEM_TICK_CTRL,
+    REG_SYSTEM_TICK_MODE, REG_SYSTEM_WAKEUP_TICK, REG_TL_MULTI_ADDR,
 };
 
 const RC_32K_HZ: u32 = 32_000;
@@ -435,17 +434,17 @@ fn init_32k_source(source: Clock32kSource) {
         // Vendor clock_32k_init(0): internal RC 32k.
         let clk32k_sel = analog::read(AREG_0X2D) & 0x7f;
         analog::write(AREG_0X2D, clk32k_sel);
-        let mut pm32k_ctrl = analog::read(AREG_0X05) & !0x03;
+        let mut pm32k_ctrl = analog::read(AREG_PWDN_SETTING1) & !0x03;
         pm32k_ctrl |= 0x02;
-        analog::write(AREG_0X05, pm32k_ctrl);
+        analog::write(AREG_PWDN_SETTING1, pm32k_ctrl);
         rc_32k_cal_vendor_like();
     } else {
         // Vendor clock_32k_init(1): external 32k crystal + pad kick.
         let clk32k_sel = analog::read(AREG_0X2D) | 0x80;
         analog::write(AREG_0X2D, clk32k_sel);
-        let mut pm32k_ctrl = analog::read(AREG_0X05) & !0x03;
+        let mut pm32k_ctrl = analog::read(AREG_PWDN_SETTING1) & !0x03;
         pm32k_ctrl |= 0x01;
-        analog::write(AREG_0X05, pm32k_ctrl);
+        analog::write(AREG_PWDN_SETTING1, pm32k_ctrl);
         ext_32k_kick_vendor_like();
     }
     select_32k_source(source);
@@ -944,12 +943,9 @@ fn long_sleep_wakeup_impl(
 #[unsafe(link_section = ".text.switch_ext32kpad_to_int32krc")]
 fn switch_ext32kpad_to_int32krc(mode: u8) {
     // Vendor parity: ANA_SYS_DEEP_CLR(SYS_NEED_REINIT_EXT32K)
-    analog::write(
-        AREG_DEEP2,
-        analog::read(AREG_DEEP2) & !0x01,
-    );
+    analog::write(AREG_DEEP2, analog::read(AREG_DEEP2) & !0x01);
     analog::write(AREG_0X2D, 0x15);
-    analog::write(AREG_0X05, 0x02);
+    analog::write(AREG_PWDN_SETTING1, 0x02);
     analog::write(AREG_0X2C, mode | 0x16);
 }
 
@@ -974,7 +970,7 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
         let dt = wake_ticks.wrapping_sub(t0);
         if dt > 0xE0000000 {
             interrupt::restore(irq_enabled);
-            return (analog::read(AREG_0X44) & WAKEUP_STATUS_ALL) as i32;
+            return (analog::read(AREG_WAKEUP_STATUS) & WAKEUP_STATUS_ALL) as i32;
         }
         let min_wakeup_us =
             unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.min) };
@@ -987,9 +983,9 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
                 );
             }
         } else {
-            analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+            analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
             let st = loop {
-                let st = analog::read(AREG_0X44) & WAKEUP_STATUS_ALL;
+                let st = analog::read(AREG_WAKEUP_STATUS) & WAKEUP_STATUS_ALL;
                 let now = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
                 if now.wrapping_sub(t0) >= dt || st != 0 {
                     break st;
@@ -1028,15 +1024,15 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
     } as u32;
     let target = wake_ticks.wrapping_sub(early << 4);
 
-    analog::write(AREG_0X26, wakeup_src_u8);
-    analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+    analog::write(AREG_WAKEUP_EN, wakeup_src_u8);
+    analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
     let bak66 = unsafe { core::ptr::read_volatile(reg8(REG_CLK_SEL).cast_const()) };
     unsafe { core::ptr::write_volatile(reg8(REG_CLK_SEL), 0) };
 
     let sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
     let (an7, a2c_high, a2b, a7e) = if sleep_mode_no_ret != 0 {
-        let t2 = analog::read(AREG_0X02);
-        analog::write(AREG_0X02, (t2 & !0x07) | 0x05);
+        let t2 = analog::read(AREG_CLK_2M_RC);
+        analog::write(AREG_CLK_2M_RC, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(REG_TL_MULTI_ADDR), startup::tl_multi_addr) };
         (5u8, 0x40u8, 0xdeu8, sleep_mode_u8)
     } else if sleep_mode_u8 == 0 {
@@ -1051,12 +1047,15 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
     let cmp = u8::from((wakeup_src_u8 & PM_WAKEUP_COMPARATOR_BITS) != 0);
     let any = cmp | u8::from(timer_wakeup);
     analog::write(AREG_0X2C, 0x16 | a2c_high | any | (cmp << 3));
-    analog::write(AREG_0X07, (analog::read(AREG_0X07) & !0x07) | an7);
+    analog::write(
+        AREG_LDO_SETTING1,
+        (analog::read(AREG_LDO_SETTING1) & !0x07) | an7,
+    );
     if sleep_mode_no_ret == 0 {
         unsafe { core::ptr::write_volatile(reg8(REG_PM_RET_SRAM_CTRL), 0x08) };
-        analog::write(AREG_0X7F, 1);
+        analog::write(AREG_PM_STATUS, 1);
     } else {
-        analog::write(AREG_0X7F, 0);
+        analog::write(AREG_PM_STATUS, 0);
     }
 
     let half = (calib >> 1) as u32;
@@ -1098,7 +1097,7 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
 
     // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
     // were enough to perturb PM entry on real hardware.
-    if wake44_gate_ready(analog::read(AREG_0X44)) {
+    if wake44_gate_ready(analog::read(AREG_WAKEUP_STATUS)) {
         sleep_start();
     }
     if sleep_mode_u8 != 0 {
@@ -1128,7 +1127,7 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
     pm_wait_xtal_ready();
     unsafe { core::ptr::write_volatile(reg8(REG_CLK_SEL), bak66) };
 
-    let st = analog::read(AREG_0X44);
+    let st = analog::read(AREG_WAKEUP_STATUS);
     if (st & PM_WAKEUP_COMPARATOR_BITS) != 0 && timer_wakeup {
         loop {
             let now = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
@@ -1159,7 +1158,7 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
         let dt = wakeup_tick.wrapping_sub(start);
         if dt > 0xE0000000 {
             interrupt::restore(irq_enabled);
-            return (analog::read(AREG_0X44) & WAKEUP_STATUS_ALL) as i32;
+            return (analog::read(AREG_WAKEUP_STATUS) & WAKEUP_STATUS_ALL) as i32;
         }
         let min_wakeup_us =
             unsafe { core::ptr::read_volatile(&raw const startup::g_pm_early_wakeup_time_us.min) };
@@ -1175,9 +1174,9 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
                 );
             }
         } else {
-            analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+            analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
             let st = loop {
-                let st = analog::read(AREG_0X44) & WAKEUP_STATUS_ALL;
+                let st = analog::read(AREG_WAKEUP_STATUS) & WAKEUP_STATUS_ALL;
                 let now = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
                 if now.wrapping_sub(start) >= dt || st != 0 {
                     break st;
@@ -1214,15 +1213,15 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
         wakeup_tick.wrapping_sub((suspend_early as u32) << 4)
     };
 
-    analog::write(AREG_0X26, wakeup_src_u8);
-    analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+    analog::write(AREG_WAKEUP_EN, wakeup_src_u8);
+    analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
     let bak66 = unsafe { core::ptr::read_volatile(reg8(REG_CLK_SEL).cast_const()) };
     unsafe { core::ptr::write_volatile(reg8(REG_CLK_SEL), 0) };
 
     let sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
     let an7 = if sleep_mode_no_ret != 0 {
-        let t2 = analog::read(AREG_0X02);
-        analog::write(AREG_0X02, (t2 & !0x07) | 0x05);
+        let t2 = analog::read(AREG_CLK_2M_RC);
+        analog::write(AREG_CLK_2M_RC, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(REG_TL_MULTI_ADDR), startup::tl_multi_addr) };
         analog::write(AREG_0X7E, sleep_mode_u8);
         analog::write(AREG_0X2B, 0xde);
@@ -1237,12 +1236,15 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
         analog::write(AREG_0X2C, 0x80u8 | if timer_wakeup { 0x14 } else { 0x1d });
         4u8
     };
-    analog::write(AREG_0X07, (analog::read(AREG_0X07) & !0x07) | an7);
+    analog::write(
+        AREG_LDO_SETTING1,
+        (analog::read(AREG_LDO_SETTING1) & !0x07) | an7,
+    );
     if sleep_mode_no_ret == 0 {
         unsafe { core::ptr::write_volatile(reg8(REG_PM_RET_SRAM_CTRL), 0x08) };
-        analog::write(AREG_0X7F, 1);
+        analog::write(AREG_PM_STATUS, 1);
     } else {
-        analog::write(AREG_0X7F, 0);
+        analog::write(AREG_PM_STATUS, 0);
     }
 
     if sleep_mode_u8 == 0x80 {
@@ -1283,7 +1285,7 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
     }
     // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
     // were enough to perturb PM entry on real hardware.
-    if wake44_gate_ready(analog::read(AREG_0X44)) {
+    if wake44_gate_ready(analog::read(AREG_WAKEUP_STATUS)) {
         sleep_start();
     }
     if sleep_mode_u8 == 0x80 {
@@ -1322,7 +1324,7 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
     }
     pm_wait_xtal_ready();
     unsafe { core::ptr::write_volatile(reg8(REG_CLK_SEL), bak66) };
-    let st = analog::read(AREG_0X44);
+    let st = analog::read(AREG_WAKEUP_STATUS);
     if (st & PM_WAKEUP_COMPARATOR_BITS) != 0 && timer_wakeup {
         loop {
             let now = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
@@ -1367,11 +1369,11 @@ pub extern "C" fn pm_long_sleep_wakeup(
     }
     let has_timer = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
     if has_timer && wakeup_duration_ticks_32k < 0x40 {
-        analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+        analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
         let t = wakeup_duration_ticks_32k.wrapping_mul(31);
         let budget = t.wrapping_mul(4).wrapping_add(wakeup_duration_ticks_32k);
         let st = loop {
-            let st = analog::read(AREG_0X44) & WAKEUP_STATUS_ALL;
+            let st = analog::read(AREG_WAKEUP_STATUS) & WAKEUP_STATUS_ALL;
             let now = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
             if now.wrapping_sub(start_tick) >= budget || st != 0 {
                 break st;
@@ -1398,8 +1400,8 @@ pub extern "C" fn pm_long_sleep_wakeup(
     }
     let wakeup_src_u32 = wakeup_src_u8 as u32;
     let minus64 = wakeup_duration_ticks_32k.wrapping_sub(0x40);
-    analog::write(AREG_0X26, wakeup_src_u8);
-    analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+    analog::write(AREG_WAKEUP_EN, wakeup_src_u8);
+    analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
     let bak66 = unsafe { core::ptr::read_volatile(reg8(REG_CLK_SEL).cast_const()) };
     unsafe {
         core::ptr::write_volatile(reg8(REG_CLK_SEL), 0);
@@ -1407,8 +1409,8 @@ pub extern "C" fn pm_long_sleep_wakeup(
     let sleep_mode_u8 = sleep_mode.raw();
     let sleep_mode_retention = sleep_mode_u8 & 0x7f;
     let (an7, v2c_base) = if sleep_mode_retention != 0 {
-        let t2 = analog::read(AREG_0X02);
-        analog::write(AREG_0X02, (t2 & !0x07) | 0x05);
+        let t2 = analog::read(AREG_CLK_2M_RC);
+        analog::write(AREG_CLK_2M_RC, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(REG_TL_MULTI_ADDR), startup::tl_multi_addr) };
         analog::write(AREG_0X2B, 0xde);
         (1u8, 0x56u8)
@@ -1431,14 +1433,17 @@ pub extern "C" fn pm_long_sleep_wakeup(
         analog2c = 0xde;
     }
     analog::write(AREG_0X2C, analog2c);
-    analog::write(AREG_0X07, (analog::read(AREG_0X07) & !0x07) | an7);
+    analog::write(
+        AREG_LDO_SETTING1,
+        (analog::read(AREG_LDO_SETTING1) & !0x07) | an7,
+    );
     if sleep_mode_retention == 0 {
         unsafe {
             core::ptr::write_volatile(reg8(REG_PM_RET_SRAM_CTRL), 0x08);
         }
-        analog::write(AREG_0X7F, 0x01);
+        analog::write(AREG_PM_STATUS, 0x01);
     } else {
-        analog::write(AREG_0X7F, 0x00);
+        analog::write(AREG_PM_STATUS, 0x00);
     }
     unsafe {
         let calib_u32 = calib as u32;
@@ -1453,8 +1458,12 @@ pub extern "C" fn pm_long_sleep_wakeup(
         let sr =
             core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us)
                 as u32;
-        analog::write(AREG_0X1F, !(((sr << 7).wrapping_add(half)) / calib_u32) as u8);
-        let dt = core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()).wrapping_sub(start_tick);
+        analog::write(
+            AREG_R_DLY1,
+            !(((sr << 7).wrapping_add(half)) / calib_u32) as u8,
+        );
+        let dt =
+            core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()).wrapping_sub(start_tick);
         let wake_tick = if startup::pm_long_suspend != 0 {
             minus64
                 .wrapping_add(startup::tick_32k_cur)
@@ -1474,7 +1483,7 @@ pub extern "C" fn pm_long_sleep_wakeup(
     }
     // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
     // were enough to perturb PM entry on real hardware.
-    if wake44_gate_ready(analog::read(AREG_0X44)) {
+    if wake44_gate_ready(analog::read(AREG_WAKEUP_STATUS)) {
         sleep_start();
     }
     if sleep_mode_u8 == SleepMode::DeepSleep.raw() {
@@ -1507,7 +1516,7 @@ pub extern "C" fn pm_long_sleep_wakeup(
     unsafe {
         core::ptr::write_volatile(reg8(REG_CLK_SEL), bak66);
     }
-    let st = analog::read(AREG_0X44);
+    let st = analog::read(AREG_WAKEUP_STATUS);
     interrupt::restore(irq_enabled);
     if st != 0 {
         (st as u32 | STATUS_ENTER_SUSPEND) as i32
@@ -1530,11 +1539,11 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     let start = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
     let has_timer = (wakeup_src_u8 & PM_WAKEUP_TIMER_BITS) != 0;
     if has_timer && wakeup_duration_ticks_32k < 0x40 {
-        analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+        analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
         let t = wakeup_duration_ticks_32k.wrapping_mul(31);
         let budget = (((t << 6).wrapping_sub(t)) << 3).wrapping_add(wakeup_duration_ticks_32k) >> 5;
         let st = loop {
-            let st = analog::read(AREG_0X44) & WAKEUP_STATUS_ALL;
+            let st = analog::read(AREG_WAKEUP_STATUS) & WAKEUP_STATUS_ALL;
             let now = unsafe { core::ptr::read_volatile(reg32(REG_SYSTEM_TICK).cast_const()) };
             if now.wrapping_sub(start) >= budget || st != 0 {
                 break st;
@@ -1560,8 +1569,8 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
         startup::tick_32k_cur = pm_get_32k_tick();
     }
     let wake_m64 = wakeup_duration_ticks_32k.wrapping_sub(0x40);
-    analog::write(AREG_0X26, wakeup_src_u8);
-    analog::write(AREG_0X44, WAKEUP_STATUS_ALL);
+    analog::write(AREG_WAKEUP_EN, wakeup_src_u8);
+    analog::write(AREG_WAKEUP_STATUS, WAKEUP_STATUS_ALL);
     let bak66 = unsafe { core::ptr::read_volatile(reg8(REG_CLK_SEL).cast_const()) };
     unsafe {
         core::ptr::write_volatile(reg8(REG_CLK_SEL), 0);
@@ -1569,8 +1578,8 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     let mut sleep_mode_u8 = sleep_mode.raw();
     let mut sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
     let (an7, mode2c) = if sleep_mode_no_ret != 0 {
-        let t2 = analog::read(AREG_0X02);
-        analog::write(AREG_0X02, (t2 & !0x07) | 0x05);
+        let t2 = analog::read(AREG_CLK_2M_RC);
+        analog::write(AREG_CLK_2M_RC, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(REG_TL_MULTI_ADDR), startup::tl_multi_addr) };
         let d = sleep_mode_u8.wrapping_sub(0x80);
         sleep_mode_u8 = (d | (0u8.wrapping_sub(d))) & 0xff;
@@ -1601,12 +1610,15 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     } else {
         analog::write(AREG_0X2C, 0x16u8 | mode2c);
     }
-    analog::write(AREG_0X07, (analog::read(AREG_0X07) & !0x07) | an7);
+    analog::write(
+        AREG_LDO_SETTING1,
+        (analog::read(AREG_LDO_SETTING1) & !0x07) | an7,
+    );
     if sleep_mode_no_ret == 0 {
         unsafe { core::ptr::write_volatile(reg8(REG_PM_RET_SRAM_CTRL), 0x08) };
-        analog::write(AREG_0X7F, 1);
+        analog::write(AREG_PM_STATUS, 1);
     } else {
-        analog::write(AREG_0X7F, 0);
+        analog::write(AREG_PM_STATUS, 0);
     }
     if sleep_mode_u8 != 0 {
         analog::write(AREG_DEEP2, analog::read(AREG_DEEP2) | 0x02);
@@ -1642,7 +1654,7 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     }
     // Keep the gate-to-sleep sequence vendor-tight: extra volatile stores here
     // were enough to perturb PM entry on real hardware.
-    if wake44_gate_ready(analog::read(AREG_0X44)) {
+    if wake44_gate_ready(analog::read(AREG_WAKEUP_STATUS)) {
         sleep_start();
     }
     if sleep_mode_u8 != 0 {
@@ -1675,7 +1687,7 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     unsafe {
         core::ptr::write_volatile(reg8(REG_CLK_SEL), bak66);
     }
-    let st = analog::read(AREG_0X44);
+    let st = analog::read(AREG_WAKEUP_STATUS);
     interrupt::restore(irq_enabled);
     if st != 0 {
         (st as u32 | STATUS_ENTER_SUSPEND) as i32

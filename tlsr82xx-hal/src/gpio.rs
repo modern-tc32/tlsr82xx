@@ -6,11 +6,13 @@ use embedded_hal::digital::{
     StatefulOutputPin as EhStatefulOutputPin,
 };
 
-use crate::{analog, pac};
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
-    AREG_GPIO_PB_DS, AREG_GPIO_PB_IE, AREG_GPIO_PC_DS, AREG_GPIO_PC_IE,
+    AREG_GPIO_PB_DS, AREG_GPIO_PB_IE, AREG_GPIO_PC_DS, AREG_GPIO_PC_IE, AREG_PA0_PA3_PULL,
+    AREG_PA4_PA7_PULL, AREG_PB0_PB3_PULL, AREG_PB4_PB7_PULL, AREG_PC0_PC3_PULL, AREG_PC4_PC7_PULL,
+    AREG_PD0_PD3_PULL, AREG_PD4_PD7_PULL,
 };
+use crate::{analog, pac};
 
 const PORT_A: u8 = 0;
 const PORT_B: u8 = 1;
@@ -342,7 +344,7 @@ impl<const PORT: u8, const BIT: u8, MODE> Pin<PORT, BIT, MODE> {
         #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
         {
             if PORT <= PORT_D {
-                let addr = 0x0e + (PORT * 2) + (BIT / 4);
+                let addr = pull_control_reg_8258(PORT, BIT)?;
                 let shift = (BIT % 4) * 2;
                 return Some((addr, shift));
             }
@@ -822,7 +824,7 @@ fn pull_addr_shift_raw(port: u8, bit: u8) -> Option<(u8, u8)> {
     #[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
     {
         if port <= PORT_D {
-            let addr = 0x0e + (port * 2) + (bit / 4);
+            let addr = pull_control_reg_8258(port, bit)?;
             let shift = (bit % 4) * 2;
             return Some((addr, shift));
         }
@@ -903,6 +905,22 @@ impl<const PORT: u8, const BIT: u8> Pin<PORT, BIT, Output> {
     }
 }
 
+#[cfg(any(feature = "chip-8258", feature = "chip-8278"))]
+#[inline(always)]
+fn pull_control_reg_8258(port: u8, bit: u8) -> Option<u8> {
+    match (port, bit / 4) {
+        (PORT_A, 0) => Some(AREG_PA0_PA3_PULL),
+        (PORT_A, 1) => Some(AREG_PA4_PA7_PULL),
+        (PORT_B, 0) => Some(AREG_PB0_PB3_PULL),
+        (PORT_B, 1) => Some(AREG_PB4_PB7_PULL),
+        (PORT_C, 0) => Some(AREG_PC0_PC3_PULL),
+        (PORT_C, 1) => Some(AREG_PC4_PC7_PULL),
+        (PORT_D, 0) => Some(AREG_PD0_PD3_PULL),
+        (PORT_D, 1) => Some(AREG_PD4_PD7_PULL),
+        _ => None,
+    }
+}
+
 impl<const PORT: u8, const BIT: u8> Pin<PORT, BIT, Input> {
     #[inline(always)]
     fn input_is_high(&self) -> bool {
@@ -975,7 +993,10 @@ mod tests {
             Some(PinmuxMode::Selector(0b00))
         ));
         assert!(matches!(
-            pinmux_mode_for(RawPin::try_from_u16(0x0301).unwrap(), PinFunction::RxCyc2Lna),
+            pinmux_mode_for(
+                RawPin::try_from_u16(0x0301).unwrap(),
+                PinFunction::RxCyc2Lna
+            ),
             Some(PinmuxMode::Selector(0b00))
         ));
     }
@@ -990,7 +1011,9 @@ mod tests {
 
     #[test]
     fn unsupported_pair_is_rejected() {
-        assert!(pinmux_mode_for(RawPin::try_from_u16(0x0104).unwrap(), PinFunction::Pwm0).is_none());
+        assert!(
+            pinmux_mode_for(RawPin::try_from_u16(0x0104).unwrap(), PinFunction::Pwm0).is_none()
+        );
     }
 
     #[test]

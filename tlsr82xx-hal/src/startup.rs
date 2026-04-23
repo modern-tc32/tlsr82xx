@@ -1,15 +1,15 @@
 use crate::mmio::{reg16, reg32, reg8};
 #[cfg(feature = "chip-8258")]
 use crate::regs8258::{
-    AREG_32K_TICK_BYTE0, AREG_32K_TICK_BYTE1, AREG_32K_TICK_BYTE2, AREG_32K_TICK_BYTE3, AREG_0X01,
-    AREG_0X02, AREG_0X27, AREG_0X28, AREG_0X29, AREG_0X2A, AREG_0X44,
-    AREG_0X7E, AREG_0X7F, AREG_0X8C, AREG_DEEP2, AREG_USB_DP_PULLUP,
-    AREG_USB_POWER, AREG_XO_SETTING, AREG_CLK_SETTING, REG_ANA_POWER_CTRL,
+    AREG_0X7E, AREG_32K_TICK_0, AREG_32K_TICK_1, AREG_32K_TICK_2, AREG_32K_TICK_3, AREG_CLK_2M_RC,
+    AREG_CLK_SETTING, AREG_DCDC_CTRL, AREG_DEEP2, AREG_DIG_LDO_CAP, AREG_GPIO_WAKEUP_EN_PA,
+    AREG_GPIO_WAKEUP_EN_PB, AREG_GPIO_WAKEUP_EN_PC, AREG_GPIO_WAKEUP_EN_PD, AREG_LDO_TRIM,
+    AREG_PM_STATUS, AREG_PWDN_SETTING, AREG_WAKEUP_STATUS, AREG_XO_SETTING, REG_ANA_POWER_CTRL,
     REG_BASE_ADDR, REG_CLK_EN0, REG_CLK_EN1, REG_CLK_EN2, REG_DFIFO0_ADDR, REG_DFIFO0_SIZE,
     REG_DFIFO1_ADDR, REG_DMA_CHN_EN, REG_GPIO_PA_GPIO, REG_GPIO_PA_IE, REG_GPIO_PA_OEN,
     REG_GPIO_PE_IE, REG_GPIO_WAKEUP_IRQ, REG_IRQ_MASK, REG_MCU_WAKEUP_MASK, REG_MSPI_CTRL,
-    REG_MSPI_DATA, REG_MUX_FUNC_A2, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG,
-    REG_PWDN_CTRL, REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI,
+    REG_MSPI_DATA, REG_MUX_FUNC_A2, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG, REG_PWDN_CTRL,
+    REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI,
     REG_SYSTEM_32K_TICK_RD, REG_SYSTEM_TICK, REG_SYSTEM_TICK_CTRL, REG_TL_MULTI_ADDR,
     REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
 };
@@ -446,8 +446,8 @@ pub extern "C" fn __tc32_boot_init() -> ! {
         __tc32_efuse_delay();
 
         let wake_flag = __tc32_analog_read_u8(AREG_0X7E);
-        let wake_status = __tc32_analog_read_u8(AREG_0X44);
-        let pm_status = __tc32_analog_read_u8(AREG_0X7F);
+        let wake_status = __tc32_analog_read_u8(AREG_WAKEUP_STATUS);
+        let pm_status = __tc32_analog_read_u8(AREG_PM_STATUS);
         // VENDOR-DIFF:
         // vendor boot code treats any non-zero `ana 0x7e` as a PM wake marker.
         // Keep the check restricted to vendor PM mode encodings to reject stale
@@ -567,14 +567,14 @@ pub extern "C" fn irq_disable() -> u8 {
 
 pub fn startup_pm_get_32k_tick() -> u32 {
     loop {
-        let prev = ((analog::read(AREG_32K_TICK_BYTE3) as u32) << 24)
-            | ((analog::read(AREG_32K_TICK_BYTE2) as u32) << 16)
-            | ((analog::read(AREG_32K_TICK_BYTE1) as u32) << 8)
-            | analog::read(AREG_32K_TICK_BYTE0) as u32;
-        let value = ((analog::read(AREG_32K_TICK_BYTE3) as u32) << 24)
-            | ((analog::read(AREG_32K_TICK_BYTE2) as u32) << 16)
-            | ((analog::read(AREG_32K_TICK_BYTE1) as u32) << 8)
-            | analog::read(AREG_32K_TICK_BYTE0) as u32;
+        let prev = ((analog::read(AREG_32K_TICK_3) as u32) << 24)
+            | ((analog::read(AREG_32K_TICK_2) as u32) << 16)
+            | ((analog::read(AREG_32K_TICK_1) as u32) << 8)
+            | analog::read(AREG_32K_TICK_0) as u32;
+        let value = ((analog::read(AREG_32K_TICK_3) as u32) << 24)
+            | ((analog::read(AREG_32K_TICK_2) as u32) << 16)
+            | ((analog::read(AREG_32K_TICK_1) as u32) << 8)
+            | analog::read(AREG_32K_TICK_0) as u32;
 
         let delta = value.wrapping_sub(prev);
         if delta <= 1 {
@@ -690,7 +690,7 @@ pub fn startup_sleep_start() {
         fn start_suspend();
     }
 
-    analog::write(AREG_USB_POWER, 0x87);
+    analog::write(AREG_PWDN_SETTING, 0x87);
     unsafe {
         core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 0);
         core::ptr::write_volatile(reg8(REG_MSPI_DATA), 0xb9);
@@ -739,7 +739,7 @@ pub fn startup_sleep_start() {
     unsafe {
         core::ptr::write_volatile(reg8(REG_MSPI_CTRL), 1);
     }
-    analog::write(AREG_USB_POWER, 0x80);
+    analog::write(AREG_PWDN_SETTING, 0x80);
 
     let nopnum = unsafe { g_pm_xtal_stable_suspend_nopnum };
     let mut delay = 0u32;
@@ -869,14 +869,14 @@ pub fn startup_cpu_wakeup_init() {
     }
 
     analog::write(AREG_CLK_SETTING, 0x64);
-    analog::write(AREG_USB_POWER, 0x80);
-    analog::write(AREG_USB_DP_PULLUP, 0x38);
-    analog::write(AREG_0X8C, 0x02);
-    analog::write(AREG_0X02, 0xa2);
-    analog::write(AREG_0X27, 0x00);
-    analog::write(AREG_0X28, 0x00);
-    analog::write(AREG_0X29, 0x00);
-    analog::write(AREG_0X2A, 0x00);
+    analog::write(AREG_PWDN_SETTING, 0x80);
+    analog::write(AREG_DCDC_CTRL, 0x38);
+    analog::write(AREG_LDO_TRIM, 0x02);
+    analog::write(AREG_CLK_2M_RC, 0xa2);
+    analog::write(AREG_GPIO_WAKEUP_EN_PA, 0x00);
+    analog::write(AREG_GPIO_WAKEUP_EN_PB, 0x00);
+    analog::write(AREG_GPIO_WAKEUP_EN_PC, 0x00);
+    analog::write(AREG_GPIO_WAKEUP_EN_PD, 0x00);
 
     unsafe {
         core::ptr::write_volatile(reg32(REG_PM_RET_CTRL0), 0x0404_0404);
@@ -887,12 +887,12 @@ pub fn startup_cpu_wakeup_init() {
 
     let sram_shutdown_sel =
         unsafe { core::ptr::read_volatile(reg8(REG_PM_WAKEUP_FLAG).cast_const()) };
-    let ana_7f = analog::read(AREG_0X7F);
+    let ana_7f = analog::read(AREG_PM_STATUS);
     let ana_3c = analog::read(AREG_DEEP2);
     if sram_shutdown_sel == 1 {
-        analog::write(AREG_0X01, 0x3c);
+        analog::write(AREG_DIG_LDO_CAP, 0x3c);
     } else {
-        analog::write(AREG_0X01, 0x4c);
+        analog::write(AREG_DIG_LDO_CAP, 0x4c);
     }
 
     if (ana_7f & 0x01) != 0 {
@@ -912,7 +912,7 @@ pub fn startup_cpu_wakeup_init() {
     }
 
     unsafe {
-        pmParam.wakeup_src = analog::read(AREG_0X44);
+        pmParam.wakeup_src = analog::read(AREG_WAKEUP_STATUS);
         pmParam.is_pad_wakeup = if (pmParam.wakeup_src & 0x0a) == 0x08 {
             1
         } else {
@@ -924,7 +924,8 @@ pub fn startup_cpu_wakeup_init() {
         unsafe {
             let now_32k = startup_pm_get_32k_tick();
             tick_cur = if pm_tim_recover != 0 {
-                let handler: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(pm_tim_recover);
+                let handler: unsafe extern "C" fn(u32) -> u32 =
+                    core::mem::transmute(pm_tim_recover);
                 handler(now_32k)
             } else {
                 now_32k

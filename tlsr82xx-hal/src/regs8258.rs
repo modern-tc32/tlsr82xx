@@ -156,23 +156,35 @@ pub(crate) const FLD_RF_IRQ_INVALID_PID: u16 = 1 << 11;
 pub(crate) const FLD_RF_IRQ_STX_TIMEOUT: u16 = 1 << 12;
 pub(crate) const FLD_RF_IRQ_ALL: u16 = 0x1fff;
 
-// Analog registers start here.
-pub(crate) const AREG_0X01: u8 = 0x01;
-pub(crate) const AREG_0X02: u8 = 0x02;
+// Analog register names follow TLSR8258 vendor headers and datasheet mnemonics
+// where those names are explicitly available. Raw AREG_0X.. constants are kept
+// only for addresses that are still unnamed in the published references.
+pub(crate) const AREG_DIG_LDO_CAP: u8 = 0x01;
+pub(crate) const AREG_CLK_2M_RC: u8 = 0x02;
 pub(crate) const AREG_0X03: u8 = 0x03;
 pub(crate) const AREG_0X04: u8 = 0x04;
-pub(crate) const AREG_0X05: u8 = 0x05;
-pub(crate) const AREG_06_PLL_BG: u8 = 0x06;
-pub(crate) const AREG_0X07: u8 = 0x07;
-pub(crate) const AREG_USB_DP_PULLUP: u8 = 0x0b;
+pub(crate) const AREG_PWDN_SETTING1: u8 = 0x05;
+pub(crate) const AREG_PLL_BG: u8 = 0x06;
+pub(crate) const AREG_LDO_SETTING1: u8 = 0x07;
+// Vendor headers use `areg_dcdc_ctrl`; datasheet also documents USB DP pull-up
+// and comparator control bits at this address.
+pub(crate) const AREG_DCDC_CTRL: u8 = 0x0b;
+pub(crate) const AREG_PA0_PA3_PULL: u8 = 0x0e;
+pub(crate) const AREG_PA4_PA7_PULL: u8 = 0x0f;
+pub(crate) const AREG_PB0_PB3_PULL: u8 = 0x10;
+pub(crate) const AREG_PB4_PB7_PULL: u8 = 0x11;
+pub(crate) const AREG_PC0_PC3_PULL: u8 = 0x12;
+pub(crate) const AREG_PC4_PC7_PULL: u8 = 0x13;
+pub(crate) const AREG_PD0_PD3_PULL: u8 = 0x14;
+pub(crate) const AREG_PD4_PD7_PULL: u8 = 0x15;
 pub(crate) const AREG_FLASH_VOLTAGE: u8 = 0x0c;
-pub(crate) const AREG_0X1F: u8 = 0x1f;
+pub(crate) const AREG_R_DLY1: u8 = 0x1f;
 pub(crate) const AREG_0X20: u8 = 0x20;
-pub(crate) const AREG_0X26: u8 = 0x26;
-pub(crate) const AREG_0X27: u8 = 0x27;
-pub(crate) const AREG_0X28: u8 = 0x28;
-pub(crate) const AREG_0X29: u8 = 0x29;
-pub(crate) const AREG_0X2A: u8 = 0x2a;
+pub(crate) const AREG_WAKEUP_EN: u8 = 0x26;
+pub(crate) const AREG_GPIO_WAKEUP_EN_PA: u8 = 0x27;
+pub(crate) const AREG_GPIO_WAKEUP_EN_PB: u8 = 0x28;
+pub(crate) const AREG_GPIO_WAKEUP_EN_PC: u8 = 0x29;
+pub(crate) const AREG_GPIO_WAKEUP_EN_PD: u8 = 0x2a;
 pub(crate) const AREG_0X2B: u8 = 0x2b;
 pub(crate) const AREG_0X2C: u8 = 0x2c;
 pub(crate) const AREG_0X2D: u8 = 0x2d;
@@ -180,7 +192,7 @@ pub(crate) const AREG_0X30: u8 = 0x30;
 pub(crate) const AREG_0X31: u8 = 0x31;
 pub(crate) const AREG_0X32: u8 = 0x32;
 pub(crate) const AREG_0X33: u8 = 0x33;
-pub(crate) const AREG_USB_POWER: u8 = 0x34;
+pub(crate) const AREG_PWDN_SETTING: u8 = 0x34;
 
 // Analog registers below can store data in deepsleep mode or deepsleep with
 // SRAM retention mode. They are reset by watchdog, chip reset, RESET pin, and
@@ -205,20 +217,20 @@ pub(crate) const AREG_DEEP0: u8 = 0x3a; // initial value = 0x00
 pub(crate) const AREG_DEEP1: u8 = 0x3b; // initial value = 0x00
 pub(crate) const AREG_DEEP2: u8 = 0x3c; // initial value = 0x00
 
-pub(crate) const AREG_32K_TICK_BYTE0: u8 = 0x40;
-pub(crate) const AREG_32K_TICK_BYTE1: u8 = 0x41;
-pub(crate) const AREG_32K_TICK_BYTE2: u8 = 0x42;
-pub(crate) const AREG_32K_TICK_BYTE3: u8 = 0x43;
-pub(crate) const AREG_0X44: u8 = 0x44;
+pub(crate) const AREG_32K_TICK_0: u8 = 0x40;
+pub(crate) const AREG_32K_TICK_1: u8 = 0x41;
+pub(crate) const AREG_32K_TICK_2: u8 = 0x42;
+pub(crate) const AREG_32K_TICK_3: u8 = 0x43;
+pub(crate) const AREG_WAKEUP_STATUS: u8 = 0x44;
 pub(crate) const AREG_0X7E: u8 = 0x7e;
-pub(crate) const AREG_0X7F: u8 = 0x7f;
+pub(crate) const AREG_PM_STATUS: u8 = 0x7f;
 pub(crate) const AREG_CLK_SETTING: u8 = 0x82;
 pub(crate) const FLD_CLK_24M_TO_SAR_EN: u8 = 1 << 6;
 pub(crate) const AREG_0X86: u8 = 0x86;
 pub(crate) const AREG_0X87: u8 = 0x87;
 pub(crate) const AREG_0X88: u8 = 0x88;
 pub(crate) const AREG_XO_SETTING: u8 = 0x8a;
-pub(crate) const AREG_0X8C: u8 = 0x8c;
+pub(crate) const AREG_LDO_TRIM: u8 = 0x8c;
 pub(crate) const AREG_GPIO_PB_IE: u8 = 0xbd;
 pub(crate) const AREG_GPIO_PB_DS: u8 = 0xbf;
 pub(crate) const AREG_GPIO_PC_IE: u8 = 0xc0;
@@ -232,16 +244,16 @@ pub(crate) const AREG_0XCB: u8 = 0xcb;
 pub(crate) const AREG_0XCF: u8 = 0xcf;
 
 pub(crate) const AREG_ADC_VREF: u8 = 0xe7;
-pub(crate) const AREG_ADC_MISC_INPUT: u8 = 0xe8;
-pub(crate) const AREG_ADC_RESOLUTION_MISC: u8 = 0xec;
-pub(crate) const AREG_ADC_STATE_LENGTH_MC: u8 = 0xef;
-pub(crate) const AREG_ADC_STATE_LENGTH_C: u8 = 0xf0;
-pub(crate) const AREG_ADC_STATE_LENGTH_S: u8 = 0xf1;
-pub(crate) const AREG_ADC_CHANNEL_ENABLE: u8 = 0xf2;
+pub(crate) const AREG_ADC_AIN_CHN_MISC: u8 = 0xe8;
+pub(crate) const AREG_ADC_RES_M: u8 = 0xec;
+pub(crate) const AREG_R_MAX_MC: u8 = 0xef;
+pub(crate) const AREG_R_MAX_C: u8 = 0xf0;
+pub(crate) const AREG_R_MAX_S: u8 = 0xf1;
+pub(crate) const AREG_ADC_CHN_EN: u8 = 0xf2;
 pub(crate) const AREG_ADC_SAMPLING_CLK_DIV: u8 = 0xf4;
 pub(crate) const AREG_ADC_MISC_L: u8 = 0xf7;
 pub(crate) const AREG_ADC_MISC_H: u8 = 0xf8;
-pub(crate) const AREG_ADC_VBAT_DIV: u8 = 0xf9;
-pub(crate) const AREG_ADC_AIN_SCALE: u8 = 0xfa;
+pub(crate) const AREG_ADC_VREF_VBAT_DIV: u8 = 0xf9;
+pub(crate) const AREG_AIN_SCALE: u8 = 0xfa;
 pub(crate) const AREG_ADC_PGA_BOOST: u8 = 0xfb;
 pub(crate) const AREG_ADC_PGA_CTRL: u8 = 0xfc;

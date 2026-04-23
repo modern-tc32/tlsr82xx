@@ -389,7 +389,10 @@ pub fn write_page(mut addr: u32, mut data: &[u8]) {
 pub fn write_page_aligned(addr: u32, data: &[u8]) -> Result<(), FlashError> {
     let offset = addr as usize & (PAGE_SIZE - 1);
     if offset + data.len() > PAGE_SIZE {
-        return Err(FlashError::CrossesPageBoundary { addr, len: data.len() });
+        return Err(FlashError::CrossesPageBoundary {
+            addr,
+            len: data.len(),
+        });
     }
     write_page(addr, data);
     Ok(())
@@ -405,7 +408,9 @@ pub fn read_status(cmd: u8) -> u8 {
 pub fn write_status(kind: FlashStatusKind, data: u16) {
     let buf = [data as u8, (data >> 8) as u8];
     match kind {
-        FlashStatusKind::Status8Bit => write_raw(FLASH_WRITE_STATUS_CMD_LOWBYTE, 0, false, &buf[..1]),
+        FlashStatusKind::Status8Bit => {
+            write_raw(FLASH_WRITE_STATUS_CMD_LOWBYTE, 0, false, &buf[..1])
+        }
         FlashStatusKind::Status16BitSingleCommand => {
             write_raw(FLASH_WRITE_STATUS_CMD_LOWBYTE, 0, false, &buf)
         }

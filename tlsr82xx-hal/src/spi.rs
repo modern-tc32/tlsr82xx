@@ -1,14 +1,12 @@
-use embedded_hal::spi::{
-    Error as EhError, ErrorKind, ErrorType, Mode, Phase, Polarity, SpiBus,
-};
+use embedded_hal::spi::{Error as EhError, ErrorKind, ErrorType, Mode, Phase, Polarity, SpiBus};
 
 use crate::clock;
 use crate::gpio;
 use crate::mmio::reg8;
 use crate::regs8258::{
-    FLD_CLK0_SPI_EN, FLD_SPI_BUSY, FLD_SPI_DATA_OUT_DIS, FLD_SPI_ENABLE,
-    FLD_SPI_MASTER_MODE_EN, FLD_SPI_RD, FLD_SPI_SHARE_MODE, REG_CLK_EN0, REG_SPI_CTRL,
-    REG_SPI_DATA, REG_SPI_INV_CLK, REG_SPI_SP,
+    FLD_CLK0_SPI_EN, FLD_SPI_BUSY, FLD_SPI_DATA_OUT_DIS, FLD_SPI_ENABLE, FLD_SPI_MASTER_MODE_EN,
+    FLD_SPI_RD, FLD_SPI_SHARE_MODE, REG_CLK_EN0, REG_SPI_CTRL, REG_SPI_DATA, REG_SPI_INV_CLK,
+    REG_SPI_SP,
 };
 
 const SPI_TIMEOUT_CYCLES: usize = 100_000;
@@ -148,7 +146,10 @@ impl Spi {
         }
         self.write_clock_divider();
         unsafe {
-            core::ptr::write_volatile(reg8(REG_SPI_SP), FLD_SPI_ENABLE | compute_divider(self.frequency_hz));
+            core::ptr::write_volatile(
+                reg8(REG_SPI_SP),
+                FLD_SPI_ENABLE | compute_divider(self.frequency_hz),
+            );
             let ctrl = reg8(REG_SPI_CTRL);
             let mut bits = core::ptr::read_volatile(ctrl.cast_const()) | FLD_SPI_MASTER_MODE_EN;
             if share_mode {

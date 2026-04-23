@@ -1,15 +1,15 @@
 use crate::analog;
 use crate::mmio::{reg16, reg32, reg8};
 use crate::regs8258::{
-    AREG_06_PLL_BG, FLD_RF_IRQ_ALL, FLD_RF_IRQ_CMD_DONE, FLD_RF_IRQ_FIRST_TIMEOUT,
+    AREG_PLL_BG, FLD_RF_IRQ_ALL, FLD_RF_IRQ_CMD_DONE, FLD_RF_IRQ_FIRST_TIMEOUT,
     FLD_RF_IRQ_FSM_TIMEOUT, FLD_RF_IRQ_INVALID_PID, FLD_RF_IRQ_RETRY_HIT, FLD_RF_IRQ_RX,
     FLD_RF_IRQ_RX_CRC_2, FLD_RF_IRQ_RX_DR, FLD_RF_IRQ_RX_TIMEOUT, FLD_RF_IRQ_STX_TIMEOUT,
     FLD_RF_IRQ_TX, FLD_RF_IRQ_TX_DS, FLD_RST1_ZB, REG_DMA2_ADDR, REG_DMA2_ADDR_HI, REG_DMA3_ADDR,
     REG_DMA3_ADDR_HI, REG_DMA_CHN_EN, REG_DMA_TX_RDY0, REG_PLL_RX_FINE_DIV_TUNE,
     REG_RF_ACCESS_CODE, REG_RF_CHANNEL, REG_RF_CRC, REG_RF_IRQ_MASK, REG_RF_IRQ_STATUS,
     REG_RF_LL_CTRL_0, REG_RF_LL_CTRL_2, REG_RF_LL_CTRL_3, REG_RF_MODE_CONTROL, REG_RF_POWER,
-    REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SCHED_TICK, REG_RF_SN,
-    REG_RF_TX_SETTLE, REG_RST1,
+    REG_RF_RSSI, REG_RF_RX_MODE, REG_RF_RX_STATUS, REG_RF_SCHED_TICK, REG_RF_SN, REG_RF_TX_SETTLE,
+    REG_RST1,
 };
 
 const RF_TRX_MODE: u8 = 0xe0;
@@ -424,7 +424,7 @@ impl Radio {
     #[inline(always)]
     fn apply_channel_frequency(&mut self, channel_reg: u8, pll_freq_mhz: u16) {
         self.set_channel_raw(channel_reg);
-        analog::write(AREG_06_PLL_BG, 0x00);
+        analog::write(AREG_PLL_BG, 0x00);
         unsafe {
             core::ptr::write_volatile(reg8(REG_RF_LL_CTRL_3), 0x29);
             core::ptr::write_volatile(reg8(REG_RF_RX_MODE), 0x00);
@@ -488,11 +488,13 @@ impl Radio {
         unsafe {
             core::ptr::write_volatile(reg8(REG_RF_CHN_SET_L), (((set << 2) as u8) | 0x01) as u8);
             let ch_h = reg8(REG_RF_CHN_SET_H);
-            let ch_h_new = (core::ptr::read_volatile(ch_h.cast_const()) & !0x3f) | (((set >> 6) as u8) & 0x3f);
+            let ch_h_new =
+                (core::ptr::read_volatile(ch_h.cast_const()) & !0x3f) | (((set >> 6) as u8) & 0x3f);
             core::ptr::write_volatile(ch_h, ch_h_new);
 
             let band_reg = reg8(REG_RF_CHN_BAND);
-            let band_new = (core::ptr::read_volatile(band_reg.cast_const()) & !0x3c) | (band & 0x3c);
+            let band_new =
+                (core::ptr::read_volatile(band_reg.cast_const()) & !0x3c) | (band & 0x3c);
             core::ptr::write_volatile(band_reg, band_new);
         }
     }
@@ -744,7 +746,11 @@ impl Radio {
 
     #[inline(always)]
     pub fn irq_mask(&self) -> IrqFlags {
-        unsafe { IrqFlags(core::ptr::read_volatile(reg16(REG_RF_IRQ_MASK).cast_const())) }
+        unsafe {
+            IrqFlags(core::ptr::read_volatile(
+                reg16(REG_RF_IRQ_MASK).cast_const(),
+            ))
+        }
     }
 
     #[inline(always)]
@@ -767,7 +773,11 @@ impl Radio {
 
     #[inline(always)]
     pub fn irq_status(&self) -> IrqFlags {
-        unsafe { IrqFlags(core::ptr::read_volatile(reg16(REG_RF_IRQ_STATUS).cast_const())) }
+        unsafe {
+            IrqFlags(core::ptr::read_volatile(
+                reg16(REG_RF_IRQ_STATUS).cast_const(),
+            ))
+        }
     }
 
     #[inline(always)]

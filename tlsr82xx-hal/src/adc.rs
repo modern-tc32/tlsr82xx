@@ -231,20 +231,17 @@ fn adc_set_sample_clk(div: u8) {
 
 #[inline(always)]
 fn adc_set_state_length(r_max_mc: u16, r_max_c: u16, r_max_s: u8) {
-    analog::write(AREG_ADC_STATE_LENGTH_MC, r_max_mc as u8);
-    analog::write(AREG_ADC_STATE_LENGTH_C, r_max_c as u8);
+    analog::write(AREG_R_MAX_MC, r_max_mc as u8);
+    analog::write(AREG_R_MAX_C, r_max_c as u8);
     analog::write(
-        AREG_ADC_STATE_LENGTH_S,
+        AREG_R_MAX_S,
         (((r_max_mc >> 8) as u8) << 6) | (((r_max_c >> 8) as u8) << 4) | (r_max_s & 0x0f),
     );
 }
 
 #[inline(always)]
 fn adc_set_channel_enable_and_max_state_count(channel_bits: u8, count: u8) {
-    analog::write(
-        AREG_ADC_CHANNEL_ENABLE,
-        channel_bits | ((count & 0x07) << 4),
-    );
+    analog::write(AREG_ADC_CHN_EN, channel_bits | ((count & 0x07) << 4));
 }
 
 #[inline(always)]
@@ -283,10 +280,10 @@ fn dfifo_disable_dfifo2() {
 fn _adc_backend_touch() {
     let _ = (
         AREG_ADC_VREF,
-        AREG_ADC_MISC_INPUT,
-        AREG_ADC_RESOLUTION_MISC,
-        AREG_ADC_VBAT_DIV,
-        AREG_ADC_AIN_SCALE,
+        AREG_ADC_AIN_CHN_MISC,
+        AREG_ADC_RES_M,
+        AREG_ADC_VREF_VBAT_DIV,
+        AREG_AIN_SCALE,
         AREG_ADC_PGA_BOOST,
         AREG_ADC_PGA_CTRL,
         AREG_ADC_MISC_L,
@@ -415,20 +412,20 @@ fn adc_set_vbat_divider(divider: AdcVbatDivider) {
         AdcVbatDivider::Div1F3 => 2,
         AdcVbatDivider::Div1F2 => 3,
     };
-    let mut value = analog::read(AREG_ADC_VBAT_DIV);
+    let mut value = analog::read(AREG_ADC_VREF_VBAT_DIV);
     value = (value & !(0b11 << 2)) | (bits << 2);
-    analog::write(AREG_ADC_VBAT_DIV, value);
+    analog::write(AREG_ADC_VREF_VBAT_DIV, value);
 }
 
 #[inline(always)]
 fn adc_set_misc_input_differential(positive: u8, negative: u8) {
     analog::write(
-        AREG_ADC_MISC_INPUT,
+        AREG_ADC_AIN_CHN_MISC,
         (negative & 0x0f) | ((positive & 0x0f) << 4),
     );
-    let mut value = analog::read(AREG_ADC_RESOLUTION_MISC);
+    let mut value = analog::read(AREG_ADC_RES_M);
     value |= 1 << 6;
-    analog::write(AREG_ADC_RESOLUTION_MISC, value);
+    analog::write(AREG_ADC_RES_M, value);
 }
 
 #[inline(always)]
@@ -439,9 +436,9 @@ fn adc_set_resolution_misc(resolution: AdcResolution) {
         AdcResolution::Bits12 => 2,
         AdcResolution::Bits14 => 3,
     };
-    let mut value = analog::read(AREG_ADC_RESOLUTION_MISC);
+    let mut value = analog::read(AREG_ADC_RES_M);
     value = (value & !0b11) | bits;
-    analog::write(AREG_ADC_RESOLUTION_MISC, value);
+    analog::write(AREG_ADC_RES_M, value);
 }
 
 #[inline(always)]
@@ -477,9 +474,9 @@ fn adc_set_prescaler(prescaler: AdcPrescaler) {
         AdcPrescaler::Div1F4 => 2,
         AdcPrescaler::Div1F8 => 3,
     };
-    let mut value = analog::read(AREG_ADC_AIN_SCALE);
+    let mut value = analog::read(AREG_AIN_SCALE);
     value = (value & !(0b11 << 6)) | (bits << 6);
-    analog::write(AREG_ADC_AIN_SCALE, value);
+    analog::write(AREG_AIN_SCALE, value);
 }
 
 #[inline(always)]
@@ -559,15 +556,16 @@ fn sample_current_config_with_fluctuation() -> AdcSample {
     }
 }
 use crate::analog;
-use crate::gpio::{self, Input, PinFunction, RawPin, PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PC4, PC5};
+use crate::gpio::{
+    self, Input, PinFunction, RawPin, PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PC4, PC5,
+};
 use crate::mmio::{reg16, reg8};
 use crate::regs8258::{
-    AREG_ADC_AIN_SCALE, AREG_ADC_CHANNEL_ENABLE, AREG_ADC_MISC_H, AREG_ADC_MISC_INPUT,
-    AREG_ADC_MISC_L, AREG_ADC_PGA_BOOST, AREG_ADC_PGA_CTRL, AREG_ADC_RESOLUTION_MISC,
-    AREG_ADC_SAMPLING_CLK_DIV, AREG_ADC_STATE_LENGTH_C, AREG_ADC_STATE_LENGTH_MC,
-    AREG_ADC_STATE_LENGTH_S, AREG_ADC_VBAT_DIV, AREG_ADC_VREF, FLD_AUD_DFIFO2_IN,
-    FLD_CLK_24M_TO_SAR_EN, FLD_RST1_ADC, REG_DFIFO2_ADDR, REG_DFIFO2_ADD_HI, REG_DFIFO2_SIZE,
-    REG_DFIFO_MODE, REG_RST1,
+    AREG_ADC_AIN_CHN_MISC, AREG_ADC_CHN_EN, AREG_ADC_MISC_H, AREG_ADC_MISC_L, AREG_ADC_PGA_BOOST,
+    AREG_ADC_PGA_CTRL, AREG_ADC_RES_M, AREG_ADC_SAMPLING_CLK_DIV, AREG_ADC_VREF,
+    AREG_ADC_VREF_VBAT_DIV, AREG_AIN_SCALE, AREG_R_MAX_C, AREG_R_MAX_MC, AREG_R_MAX_S,
+    FLD_AUD_DFIFO2_IN, FLD_CLK_24M_TO_SAR_EN, FLD_RST1_ADC, REG_DFIFO2_ADDR, REG_DFIFO2_ADD_HI,
+    REG_DFIFO2_SIZE, REG_DFIFO_MODE, REG_RST1,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
