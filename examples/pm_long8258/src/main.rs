@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 
 use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
-use tlsr82xx_hal::{analog, clock, interrupt, pac, pm, timer};
+use tlsr82xx_hal::{clock, interrupt, pac, pm, timer};
 
 mod platform;
 
@@ -37,7 +37,6 @@ pub extern "C" fn main() -> i32 {
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
     drive_pin(&mut board.led_w, false);
     drive_pin(&mut board.led_y, false);
-    disable_pad_wakeup_sources();
 
     unsafe {
         if WAS_INITIALIZED == 0 {
@@ -87,14 +86,6 @@ fn delay_us(duration_us: u32) {
     while !timer::clock_time_exceed_us(started, duration_us) {
         core::hint::spin_loop();
     }
-}
-
-#[inline(always)]
-fn disable_pad_wakeup_sources() {
-    analog::write(0x27, 0x00);
-    analog::write(0x28, 0x00);
-    analog::write(0x29, 0x00);
-    analog::write(0x2a, 0x00);
 }
 
 #[panic_handler]

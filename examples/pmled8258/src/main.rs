@@ -72,7 +72,6 @@ pub extern "C" fn main() -> i32 {
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
     drive_pin(&mut board.led_w, false);
     drive_pin(&mut board.led_y, false);
-    disable_pad_wakeup_sources();
 
     if unsafe { WAS_INITIALIZED } == 0 {
         let persisted = load_persisted_step();
@@ -123,7 +122,6 @@ pub extern "C" fn main() -> i32 {
         persist_step(next as u8);
 
         power.reconfigure(config_for(case.clock));
-        disable_pad_wakeup_sources();
 
         let _ = power.sleep_ms(case.mode, pm::WakeupSource::TIMER, SLEEP_MS);
     }
@@ -207,14 +205,6 @@ fn persist_step(next: u8) {
         ANA_PERSIST_STEP_REG,
         ANA_PERSIST_MAGIC_VALUE | (next & 0x0f),
     );
-}
-
-#[inline(always)]
-fn disable_pad_wakeup_sources() {
-    analog::write(0x27, 0x00);
-    analog::write(0x28, 0x00);
-    analog::write(0x29, 0x00);
-    analog::write(0x2a, 0x00);
 }
 
 fn blink_n<P: OutputPin>(pin: &mut P, count: u8, pulse_us: u32) {
