@@ -44,6 +44,8 @@ fn main() {
     ];
 
     let asm_flags = [
+        "-DMCU_CORE_8258=1",
+        "-DMCU_STARTUP_8258=1",
         "-x",
         "assembler-with-cpp",
         "-fomit-frame-pointer",

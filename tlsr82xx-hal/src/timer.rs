@@ -63,7 +63,9 @@ pub const SYS_TICK_PER_US: u32 = 16;
 #[cfg(feature = "chip-8258")]
 #[inline(always)]
 pub fn sys_tick_per_us() -> u32 {
-    crate::clock::current_mhz() as u32
+    // Vendor `drivers-src/include/timer.h` defines the system timer as a
+    // fixed 16 MHz timebase on TLSR8258, independent of the current CPU clock.
+    SYS_TICK_PER_US
 }
 
 #[cfg(not(feature = "chip-8258"))]

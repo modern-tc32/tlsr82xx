@@ -1,3 +1,5 @@
+use crate::interrupt;
+
 const ANALOG_CTRL_BASE: usize = 0x0080_00B8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,17 +25,23 @@ impl Pull {
 #[inline(always)]
 pub fn read(addr: u8) -> u8 {
     let reg = ANALOG_CTRL_BASE as *mut u8;
-    unsafe {
+    let irq_enabled = interrupt::disable();
+    let data = unsafe {
         core::ptr::write_volatile(reg.add(0), addr);
         core::ptr::write_volatile(reg.add(2), 0x40);
         while (core::ptr::read_volatile(reg.add(2)) & 1) != 0 {}
-        core::ptr::read_volatile(reg.add(1))
-    }
+        let data = core::ptr::read_volatile(reg.add(1));
+        core::ptr::write_volatile(reg.add(2), 0);
+        data
+    };
+    interrupt::restore(irq_enabled);
+    data
 }
 
 #[inline(always)]
 pub fn write(addr: u8, value: u8) {
     let reg = ANALOG_CTRL_BASE as *mut u8;
+    let irq_enabled = interrupt::disable();
     unsafe {
         core::ptr::write_volatile(reg.add(0), addr);
         core::ptr::write_volatile(reg.add(1), value);
@@ -41,6 +49,7 @@ pub fn write(addr: u8, value: u8) {
         while (core::ptr::read_volatile(reg.add(2)) & 1) != 0 {}
         core::ptr::write_volatile(reg.add(2), 0);
     }
+    interrupt::restore(irq_enabled);
 }
 
 #[unsafe(no_mangle)]

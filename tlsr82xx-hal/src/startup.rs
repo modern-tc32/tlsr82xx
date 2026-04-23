@@ -534,6 +534,15 @@ pub extern "C" fn __tc32_boot_init() -> ! {
 }
 
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.rust_entry")]
+pub extern "C" fn __tc32_rust_entry() -> ! {
+    let _ = unsafe { main() };
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn __mulsi3(mut a: u32, mut b: u32) -> u32 {
     let mut result = 0u32;
     while b != 0 {

@@ -1,7 +1,8 @@
+use crate::analog;
 use crate::interrupt;
 use crate::mmio::reg8;
 #[cfg(feature = "chip-8258")]
-use crate::regs8258::{REG_MSPI_CTRL, REG_MSPI_DATA};
+use crate::regs8258::{AREG_FLASH_VOLTAGE, REG_MSPI_CTRL, REG_MSPI_DATA};
 
 // Bit values mirror SDK semantics used by vendor flash code.
 const FLD_MSPI_CS: u8 = 1 << 0;
@@ -19,6 +20,7 @@ const FLASH_READ_UID_CMD_XTX: u8 = 0x5a;
 const FLASH_WRITE_STATUS_CMD_LOWBYTE: u8 = 0x01;
 const FLASH_READ_STATUS_CMD_LOWBYTE: u8 = 0x05;
 const FLASH_WRITE_ENABLE_CMD: u8 = 0x06;
+const FLASH_VOLTAGE_1V95: u8 = 0x07;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FlashError {
@@ -269,19 +271,23 @@ fn mspi_ctrl_write(byte: u8) {
 }
 
 #[inline(always)]
+fn flash_sleep_us(us: u32) {
+    let start = crate::timer::clock_time();
+    while !crate::timer::clock_time_exceed_us(start, us) {}
+}
+
+#[inline(never)]
+#[unsafe(link_section = ".ram_code.flash_send_cmd")]
 fn send_cmd(cmd: u8) {
     mspi_high();
-    // Vendor code inserts sleep_us(1) here. For read-only helpers used after
-    // startup, a few nops are sufficient to separate CS edges.
-    for _ in 0..16 {
-        core::hint::spin_loop();
-    }
+    flash_sleep_us(1);
     mspi_low();
     mspi_write(cmd);
     mspi_wait();
 }
 
-#[inline(always)]
+#[inline(never)]
+#[unsafe(link_section = ".ram_code.flash_send_addr")]
 fn send_addr(addr: u32) {
     mspi_write((addr >> 16) as u8);
     mspi_wait();
@@ -291,9 +297,10 @@ fn send_addr(addr: u32) {
     mspi_wait();
 }
 
-#[inline(always)]
+#[inline(never)]
+#[unsafe(link_section = ".ram_code.flash_wait_done")]
 fn wait_done() {
-    crate::timer::clock_time();
+    flash_sleep_us(100);
     send_cmd(FLASH_READ_STATUS_CMD_LOWBYTE);
     for _ in 0..10_000_000 {
         if (mspi_read() & 0x01) == 0 {
@@ -310,6 +317,8 @@ fn mspi_read() -> u8 {
     mspi_get()
 }
 
+#[inline(never)]
+#[unsafe(link_section = ".ram_code.flash_read_raw")]
 pub fn read_raw(cmd: u8, addr: u32, addr_en: bool, dummy_count: u8, data: &mut [u8]) {
     let irq_enabled = interrupt::disable();
 
@@ -476,4 +485,15 @@ pub extern "C" fn flash_is_zb() -> u8 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn flash_vdd_f_calib() {}
+pub extern "C" fn flash_vdd_f_calib() {
+    let calib_value = read_vdd_f_calibration_value();
+    if calib_value == 0xff || (calib_value & 0xf8) != 0 {
+        if flash_is_zb() != 0 {
+            let value = (analog::read(AREG_FLASH_VOLTAGE) & 0xf8) | FLASH_VOLTAGE_1V95;
+            analog::write(AREG_FLASH_VOLTAGE, value);
+        }
+    } else {
+        let value = (analog::read(AREG_FLASH_VOLTAGE) & 0xf8) | (calib_value & 0x07);
+        analog::write(AREG_FLASH_VOLTAGE, value);
+    }
+}
