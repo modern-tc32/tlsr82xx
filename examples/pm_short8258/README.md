@@ -6,7 +6,7 @@ Power-management smoke test for TLSR8258 using the Rust short-sleep path.
 
 - 32k source: `InternalRc`
 - Wake source: `TIMER`
-- Sleep API: `pm::Pm::init(pm::Config::internal_rc()).sleep_ms(...)`
+- Sleep API: `pm::Pm::init(pm::Config::internal_rc()).sleep_ms_short(...)`
 - Four-step cycle:
   - `DeepSleepRetentionLow8K`
   - `DeepSleepRetentionLow16K`

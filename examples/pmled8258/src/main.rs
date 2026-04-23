@@ -10,7 +10,6 @@ use tlsr82xx_hal::{analog, clock, interrupt, pac, pm, timer};
 mod platform;
 
 const SLEEP_MS: u32 = 3_000;
-const RC_32K_HZ: u32 = 32_000;
 
 const LONG_PULSE_US: u32 = 240_000;
 const SHORT_PULSE_US: u32 = 130_000;
@@ -28,8 +27,8 @@ struct TestCase {
     mode: pm::SleepMode,
 }
 
-// TB03F on the current bench has no 32k XTAL fitted. Keep the pmled flow on
-// the original long_sleep_32k API, but schedule only RC32K cases on hardware.
+// TB03F on the current bench has no 32k XTAL fitted, so schedule only RC32K
+// cases on hardware.
 const TESTS: [TestCase; 4] = [
     TestCase {
         clock: pm::Clock32kSource::InternalRc,
@@ -126,11 +125,7 @@ pub extern "C" fn main() -> i32 {
         power.reconfigure(config_for(case.clock));
         disable_pad_wakeup_sources();
 
-        let _ = power.long_sleep_32k(
-            case.mode,
-            pm::WakeupSource::TIMER,
-            (SLEEP_MS * RC_32K_HZ) / 1000,
-        );
+        let _ = power.sleep_ms(case.mode, pm::WakeupSource::TIMER, SLEEP_MS);
     }
 }
 
@@ -170,7 +165,7 @@ fn indicate_startup_state(board: &mut Board, wake: pm::WakeInfo) {
             } else {
                 3
             }
-        },
+        }
     };
     blink_n(&mut board.led_w, count, LONG_PULSE_US);
 }
@@ -208,7 +203,10 @@ fn load_persisted_step() -> u8 {
 
 #[inline(always)]
 fn persist_step(next: u8) {
-    analog::write(ANA_PERSIST_STEP_REG, ANA_PERSIST_MAGIC_VALUE | (next & 0x0f));
+    analog::write(
+        ANA_PERSIST_STEP_REG,
+        ANA_PERSIST_MAGIC_VALUE | (next & 0x0f),
+    );
 }
 
 #[inline(always)]

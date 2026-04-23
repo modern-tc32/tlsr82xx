@@ -48,7 +48,11 @@ pub extern "C" fn main() -> i32 {
     let step = unsafe { NEXT_STEP as usize % TESTS.len() };
     let mode = TESTS[step];
 
-    blink_n(&mut board.led_w, (step as u8).wrapping_add(1), LONG_PULSE_US);
+    blink_n(
+        &mut board.led_w,
+        (step as u8).wrapping_add(1),
+        LONG_PULSE_US,
+    );
     delay_us(SERIES_GAP_US);
 
     // Retention wakes keep SRAM, so advance the step before sleep.
@@ -56,7 +60,7 @@ pub extern "C" fn main() -> i32 {
         NEXT_STEP = ((step + 1) % TESTS.len()) as u8;
     }
 
-    let _ = power.sleep_ms(mode, pm::WakeupSource::TIMER, SLEEP_MS);
+    let _ = power.sleep_ms_short(mode, pm::WakeupSource::TIMER, SLEEP_MS);
 
     loop {
         core::hint::spin_loop();

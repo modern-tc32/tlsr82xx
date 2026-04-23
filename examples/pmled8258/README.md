@@ -6,7 +6,7 @@ The firmware cycles through PM test cases and shows startup/wakeup information v
 
 ## Current Test Matrix
 
-- API: `pm::Pm::init(pm::Config::internal_rc()).long_sleep_32k(...)`
+- API: `pm::Pm::init(pm::Config::internal_rc()).sleep_ms(...)`
 - Wake source: `TIMER`
 - Sleep duration: `2s`
 - Cases:

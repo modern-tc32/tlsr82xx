@@ -11,6 +11,7 @@ const REG_SYSTEM_WAKEUP_TICK: usize = 0x0080_0748;
 const RC_32K_HZ: u32 = 32_000;
 const XTAL_32K_HZ: u32 = 32_768;
 const SYS_TICK_HZ: u32 = 16_000_000;
+const PM_NORMAL_SLEEP_MAX_MS: u32 = 230 * 1000;
 
 const PM_WAKEUP_PAD_BITS: u8 = 1 << 4;
 const PM_WAKEUP_CORE_BITS: u8 = 1 << 5;
@@ -204,6 +205,12 @@ pub struct SleepResult {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SleepMsKind {
+    Short,
+    Long,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct WakeupStatus(u8);
 
@@ -287,7 +294,7 @@ impl Pm {
     }
 
     #[inline(always)]
-    pub fn sleep_ms(
+    pub fn sleep_ms_short(
         &mut self,
         mode: SleepMode,
         wakeup_src: WakeupSource,
@@ -295,6 +302,23 @@ impl Pm {
     ) -> SleepResult {
         SleepResult {
             raw: sleep_for_ms_impl(mode, wakeup_src, duration_ms),
+        }
+    }
+
+    #[inline(always)]
+    pub fn sleep_ms(
+        &mut self,
+        mode: SleepMode,
+        wakeup_src: WakeupSource,
+        duration_ms: u32,
+    ) -> SleepResult {
+        match sleep_ms_kind(duration_ms) {
+            SleepMsKind::Short => self.sleep_ms_short(mode, wakeup_src, duration_ms),
+            SleepMsKind::Long => self.long_sleep_32k(
+                mode,
+                wakeup_src,
+                duration_ms_to_32k_ticks(duration_ms, current_32k_source()),
+            ),
         }
     }
 
@@ -345,8 +369,9 @@ pub extern "C" fn pm_set_wakeup_time_param(param: startup::PmRDelayUs) {
             startup::g_pm_early_wakeup_time_us.min =
                 startup::g_pm_early_wakeup_time_us.deep.wrapping_add(0x0190);
         } else {
-            startup::g_pm_early_wakeup_time_us.min =
-                startup::g_pm_early_wakeup_time_us.suspend.wrapping_add(0x0190);
+            startup::g_pm_early_wakeup_time_us.min = startup::g_pm_early_wakeup_time_us
+                .suspend
+                .wrapping_add(0x0190);
         }
     }
 }
@@ -363,8 +388,9 @@ pub extern "C" fn pm_set_xtal_stable_timer_param(delay_us: u32, loopnum: u32, no
             startup::g_pm_early_wakeup_time_us.min =
                 startup::g_pm_early_wakeup_time_us.deep.wrapping_add(0x0190);
         } else {
-            startup::g_pm_early_wakeup_time_us.min =
-                startup::g_pm_early_wakeup_time_us.suspend.wrapping_add(0x0190);
+            startup::g_pm_early_wakeup_time_us.min = startup::g_pm_early_wakeup_time_us
+                .suspend
+                .wrapping_add(0x0190);
         }
     }
 }
@@ -534,13 +560,7 @@ fn sleep_until_tick_impl(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick:
     {
         if mode.is_suspend() {
             startup::set_pm_long_suspend(false);
-            return sleep_impl(
-                mode,
-                wakeup_src,
-                wakeup_tick,
-                current_32k_source(),
-                false,
-            ) as u32;
+            return sleep_impl(mode, wakeup_src, wakeup_tick, current_32k_source(), false) as u32;
         }
         // Keep vendor short/deep path globals in sync. The ROM/object routine
         // uses cached tick globals early in its checks before internal updates.
@@ -574,46 +594,44 @@ fn sleep_for_ms_impl(mode: SleepMode, wakeup_src: WakeupSource, duration_ms: u32
     }
     #[cfg(feature = "chip-8258")]
     {
-    if !mode.is_suspend() {
-        let source = current_32k_source();
-        if source == Clock32kSource::ExternalCrystal {
-            // Vendor short XTAL path expects absolute system timer tick.
-            let ticks_per_us = timer::sys_tick_per_us();
-            let wakeup_tick = timer::clock_time().wrapping_add(
-                duration_ms
-                    .saturating_mul(1000)
-                    .saturating_mul(ticks_per_us),
+        if !mode.is_suspend() {
+            let source = current_32k_source();
+            if source == Clock32kSource::ExternalCrystal {
+                // Vendor short XTAL path expects absolute system timer tick.
+                let ticks_per_us = timer::sys_tick_per_us();
+                let wakeup_tick = timer::clock_time().wrapping_add(
+                    duration_ms
+                        .saturating_mul(1000)
+                        .saturating_mul(ticks_per_us),
+                );
+                startup::set_tick_cur(timer::clock_time());
+                startup::set_tick_32k_cur(current_32k_tick());
+                startup::set_pm_long_suspend(false);
+                return cpu_sleep_wakeup_32k_xtal(
+                    mode.raw() as u32,
+                    wakeup_src.raw() as u32,
+                    wakeup_tick,
+                ) as u32;
+            }
+            return long_sleep_32k_impl(
+                mode,
+                wakeup_src,
+                duration_ms_to_32k_ticks(duration_ms, source),
             );
-            startup::set_tick_cur(timer::clock_time());
-            startup::set_tick_32k_cur(current_32k_tick());
-            startup::set_pm_long_suspend(false);
-            return cpu_sleep_wakeup_32k_xtal(
-                mode.raw() as u32,
-                wakeup_src.raw() as u32,
-                wakeup_tick,
-            ) as u32;
         }
-        let hz = hz_32k(source) as u64;
-        let ticks_32k = ((duration_ms as u64).saturating_mul(hz) / 1000).max(1);
-        return long_sleep_32k_impl(mode, wakeup_src, ticks_32k.min(u32::MAX as u64) as u32);
-    }
 
-    let ticks_per_us = timer::sys_tick_per_us();
-    let wakeup_tick = timer::clock_time().wrapping_add(
-        duration_ms
-            .saturating_mul(1000)
-            .saturating_mul(ticks_per_us),
-    );
-    sleep_until_tick_impl(mode, wakeup_src, wakeup_tick)
+        let ticks_per_us = timer::sys_tick_per_us();
+        let wakeup_tick = timer::clock_time().wrapping_add(
+            duration_ms
+                .saturating_mul(1000)
+                .saturating_mul(ticks_per_us),
+        );
+        sleep_until_tick_impl(mode, wakeup_src, wakeup_tick)
     }
 }
 
 #[inline(always)]
-fn long_sleep_32k_impl(
-    mode: SleepMode,
-    wakeup_src: WakeupSource,
-    duration_ticks_32k: u32,
-) -> u32 {
+fn long_sleep_32k_impl(mode: SleepMode, wakeup_src: WakeupSource, duration_ticks_32k: u32) -> u32 {
     #[cfg(not(feature = "chip-8258"))]
     {
         let _ = (mode, wakeup_src, duration_ticks_32k);
@@ -621,10 +639,10 @@ fn long_sleep_32k_impl(
     }
     #[cfg(feature = "chip-8258")]
     {
-    // Vendor 8258 long-sleep entry points consume raw 32k-domain durations
-    // (`duration_ms * 32` in the official SDK RC path), so keep this API in
-    // the same unit and pass it through unchanged.
-    long_sleep_wakeup_impl(mode, wakeup_src, duration_ticks_32k) as u32
+        // Vendor 8258 long-sleep entry points consume raw 32k-domain durations
+        // (`duration_ms * 32` in the official SDK RC path), so keep this API in
+        // the same unit and pass it through unchanged.
+        long_sleep_wakeup_impl(mode, wakeup_src, duration_ticks_32k) as u32
     }
 }
 
@@ -688,6 +706,23 @@ fn hz_32k(source: Clock32kSource) -> u32 {
         Clock32kSource::InternalRc => RC_32K_HZ,
         Clock32kSource::ExternalCrystal => XTAL_32K_HZ,
     }
+}
+
+#[inline(always)]
+fn sleep_ms_kind(duration_ms: u32) -> SleepMsKind {
+    if duration_ms > PM_NORMAL_SLEEP_MAX_MS {
+        SleepMsKind::Long
+    } else {
+        SleepMsKind::Short
+    }
+}
+
+#[inline(always)]
+fn duration_ms_to_32k_ticks(duration_ms: u32, source: Clock32kSource) -> u32 {
+    let hz = hz_32k(source) as u64;
+    ((duration_ms as u64).saturating_mul(hz) / 1000)
+        .max(1)
+        .min(u32::MAX as u64) as u32
 }
 
 #[inline(always)]
@@ -858,9 +893,11 @@ fn long_sleep_wakeup_impl(
     // and XTAL variants (`32*1000 -> 1s` for RC, `32768 -> 1s` for XTAL).
     // Keep the long-sleep API in that domain.
     match source {
-        Clock32kSource::InternalRc => {
-            pm_long_sleep_wakeup(mode.raw() as u32, wakeup_src.raw() as u32, duration_ticks_32k)
-        }
+        Clock32kSource::InternalRc => pm_long_sleep_wakeup(
+            mode.raw() as u32,
+            wakeup_src.raw() as u32,
+            duration_ticks_32k,
+        ),
         Clock32kSource::ExternalCrystal => cpu_long_sleep_wakeup_32k_xtal(
             mode.raw() as u32,
             wakeup_src.raw() as u32,
@@ -992,16 +1029,19 @@ pub extern "C" fn cpu_sleep_wakeup_32k_rc(mode: u32, wakeup_src: u32, wakeup_tic
     }
     analog::write(
         0x20,
-        0x7f_u32
-            .wrapping_sub((0xfa00u32.wrapping_add(half)) / (calib as u32)) as u8,
+        0x7f_u32.wrapping_sub((0xfa00u32.wrapping_add(half)) / (calib as u32)) as u8,
     );
     let sr = unsafe {
         core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us)
     } as u32;
-    analog::write(0x1f, (((sr << 7).wrapping_add(half)) / (calib as u32)) as u8);
+    analog::write(
+        0x1f,
+        (((sr << 7).wrapping_add(half)) / (calib as u32)) as u8,
+    );
 
     let d = target.wrapping_sub(unsafe { core::ptr::read_volatile(&raw const startup::tick_cur) });
-    let wake_tick = if unsafe { core::ptr::read_volatile(&raw const startup::pm_long_suspend) } != 0 {
+    let wake_tick = if unsafe { core::ptr::read_volatile(&raw const startup::pm_long_suspend) } != 0
+    {
         target
             .wrapping_sub((d / (calib as u32)) << 4)
             .wrapping_add(unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_cur) })
@@ -1091,7 +1131,11 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
             unsafe {
                 core::ptr::write_volatile(
                     &raw mut startup::pm_long_suspend,
-                    if dt > 0x07feffff { 1 } else { u8::from(timer_wakeup) },
+                    if dt > 0x07feffff {
+                        1
+                    } else {
+                        u8::from(timer_wakeup)
+                    },
                 );
             }
         } else {
@@ -1179,7 +1223,8 @@ pub extern "C" fn cpu_sleep_wakeup_32k_xtal(mode: u32, wakeup_src: u32, wakeup_t
     );
 
     let d = target.wrapping_sub(unsafe { core::ptr::read_volatile(&raw const startup::tick_cur) });
-    let wake_tick = if unsafe { core::ptr::read_volatile(&raw const startup::pm_long_suspend) } != 0 {
+    let wake_tick = if unsafe { core::ptr::read_volatile(&raw const startup::pm_long_suspend) } != 0
+    {
         target
             .wrapping_sub((d / CRYSTAL32768_TICK_PER_32CYCLE) << 5)
             .wrapping_add(unsafe { core::ptr::read_volatile(&raw const startup::tick_32k_cur) })
@@ -1365,8 +1410,13 @@ pub extern "C" fn pm_long_sleep_wakeup(
         if sleep_mode_u8 == SleepMode::DeepSleep.raw() {
             analog::write(0x3c, analog::read(0x3c) | 0x02);
         }
-        analog::write(0x20, 0x7f_u32.wrapping_sub((0xfa00_u32.wrapping_add(half)) / calib_u32) as u8);
-        let sr = core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us) as u32;
+        analog::write(
+            0x20,
+            0x7f_u32.wrapping_sub((0xfa00_u32.wrapping_add(half)) / calib_u32) as u8,
+        );
+        let sr =
+            core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us)
+                as u32;
         analog::write(0x1f, !(((sr << 7).wrapping_add(half)) / calib_u32) as u8);
         let dt = core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_sub(start_tick);
         let wake_tick = if startup::pm_long_suspend != 0 {
@@ -1400,7 +1450,8 @@ pub extern "C" fn pm_long_sleep_wakeup(
         let t32 = pm_get_32k_tick();
         if startup::pm_long_suspend != 0 {
             startup::tick_cur = startup::tick_cur.wrapping_add(
-                ((t32.wrapping_sub(startup::tick_32k_cur)) >> 4).wrapping_mul(startup::tick_32k_calib as u32),
+                ((t32.wrapping_sub(startup::tick_32k_cur)) >> 4)
+                    .wrapping_mul(startup::tick_32k_calib as u32),
             );
         } else {
             startup::tick_cur = startup::tick_cur.wrapping_add(
@@ -1526,15 +1577,24 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     }
     analog::write(0x20, 0x77);
     unsafe {
-        let sr = core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us) as u32;
-        analog::write(0x1f, (((sr << 8) + (CRYSTAL32768_TICK_PER_32CYCLE >> 1)) / CRYSTAL32768_TICK_PER_32CYCLE) as u8);
+        let sr =
+            core::ptr::read_volatile(&raw const startup::g_pm_r_delay_us.suspend_ret_r_delay_us)
+                as u32;
+        analog::write(
+            0x1f,
+            (((sr << 8) + (CRYSTAL32768_TICK_PER_32CYCLE >> 1)) / CRYSTAL32768_TICK_PER_32CYCLE)
+                as u8,
+        );
         let dt = core::ptr::read_volatile(reg32(0x0080_0740).cast_const()).wrapping_sub(start);
         let wake_tick = if startup::pm_long_suspend != 0 {
-            wake_m64.wrapping_add(startup::tick_cur).wrapping_sub((dt / CRYSTAL32768_TICK_PER_32CYCLE) << 5)
-        } else {
             wake_m64
                 .wrapping_add(startup::tick_cur)
-                .wrapping_sub((dt << 5).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1) / CRYSTAL32768_TICK_PER_32CYCLE)
+                .wrapping_sub((dt / CRYSTAL32768_TICK_PER_32CYCLE) << 5)
+        } else {
+            wake_m64.wrapping_add(startup::tick_cur).wrapping_sub(
+                (dt << 5).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1)
+                    / CRYSTAL32768_TICK_PER_32CYCLE,
+            )
         };
         core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
         core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);
@@ -1559,11 +1619,13 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
         let d = t32.wrapping_sub(startup::tick_32k_cur);
         if startup::pm_long_suspend != 0 {
             startup::tick_cur = startup::tick_cur.wrapping_add(
-                d.wrapping_div(32).wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE),
+                d.wrapping_div(32)
+                    .wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE),
             );
         } else {
             startup::tick_cur = startup::tick_cur.wrapping_add(
-                d.wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE).wrapping_div(32),
+                d.wrapping_mul(CRYSTAL32768_TICK_PER_32CYCLE)
+                    .wrapping_div(32),
             );
         }
         startup::tick_32k_cur = startup::tick_cur.wrapping_add(20 * 16);
@@ -1670,7 +1732,10 @@ pub extern "C" fn cpu_wakeup_init() {
 
 #[cfg(test)]
 mod tests {
-    use super::{sys_ticks_to_32k_ticks, ticks_32k_to_sys_ticks, Clock32kSource};
+    use super::{
+        sleep_ms_kind, sys_ticks_to_32k_ticks, ticks_32k_to_sys_ticks, Clock32kSource, SleepMsKind,
+        PM_NORMAL_SLEEP_MAX_MS,
+    };
 
     #[test]
     fn rc_32k_tick_conversion_matches_16mhz_ratio() {
@@ -1693,6 +1758,15 @@ mod tests {
         assert_eq!(
             sys_ticks_to_32k_ticks(16_000_000, Clock32kSource::ExternalCrystal),
             32_768
+        );
+    }
+
+    #[test]
+    fn sleep_ms_uses_short_path_at_threshold_and_long_above() {
+        assert_eq!(sleep_ms_kind(PM_NORMAL_SLEEP_MAX_MS), SleepMsKind::Short);
+        assert_eq!(
+            sleep_ms_kind(PM_NORMAL_SLEEP_MAX_MS.saturating_add(1)),
+            SleepMsKind::Long
         );
     }
 }
