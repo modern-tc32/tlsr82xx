@@ -1194,26 +1194,21 @@ pub extern "C" fn pm_long_sleep_wakeup(
     }
     let sleep_mode_u8 = sleep_mode.raw();
     let sleep_mode_retention = sleep_mode_u8 & 0x7f;
-    let mut an7 = 0u8;
-    let mut v2c_base = 0x16u8;
-    if sleep_mode_retention != 0 {
+    let (an7, v2c_base) = if sleep_mode_retention != 0 {
         let t2 = analog::read(0x02);
         analog::write(0x02, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
-        an7 = 1;
-        v2c_base = 0x56;
         analog::write(0x2b, 0xde);
+        (1u8, 0x56u8)
     } else if sleep_mode_u8 == 0 {
         analog::write(0x04, 0x48);
         analog::write(0x7e, 0x00);
-        an7 = 4;
-        v2c_base = 0x96;
         analog::write(0x2b, 0x5e);
+        (4u8, 0x96u8)
     } else {
-        an7 = 5;
-        v2c_base = 0xd6;
         analog::write(0x2b, 0xde);
-    }
+        (5u8, 0xd6u8)
+    };
     analog::write(0x7e, sleep_mode_u8);
     let cmp = ((wakeup_src_u32 & PM_WAKEUP_COMPARATOR_BITS as u32) != 0) as u8;
     let any = cmp | (has_timer as u8);
@@ -1355,35 +1350,30 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
     }
     let mut sleep_mode_u8 = sleep_mode.raw();
     let mut sleep_mode_no_ret = sleep_mode_u8 & 0x7f;
-    let mut an7 = 0u8;
-    let mut mode2c = 0x1d_u8;
-    if sleep_mode_no_ret != 0 {
+    let (an7, mode2c) = if sleep_mode_no_ret != 0 {
         let t2 = analog::read(0x02);
         analog::write(0x02, (t2 & !0x07) | 0x05);
         unsafe { core::ptr::write_volatile(reg8(0x0080_063e), startup::tl_multi_addr) };
-        an7 = 5;
-        mode2c = 0xde;
         let d = sleep_mode_u8.wrapping_sub(0x80);
         sleep_mode_u8 = (d | (0u8.wrapping_sub(d))) & 0xff;
+        (5u8, 0xdeu8)
     } else if sleep_mode_u8 == 0 {
         analog::write(0x04, 0x48);
         analog::write(0x7e, 0x00);
         analog::write(0x2b, 0x5e);
-        an7 = 4;
-        mode2c = 0x1d;
+        (4u8, 0x1du8)
     } else {
         analog::write(0x7e, 0x80);
         analog::write(0x2b, 0xde);
         sleep_mode_no_ret = 1;
-        an7 = 5;
         if !has_timer {
             let ab = u8::from(irq_enabled);
             switch_ext32kpad_to_int32krc(ab | 0xc0 | (ab << 3));
-            mode2c = 0x00;
+            (5u8, 0x00u8)
         } else {
-            mode2c = 0xc0;
+            (5u8, 0xc0u8)
         }
-    }
+    };
     let wake_cmp = ((wakeup_src_u8 & PM_WAKEUP_COMPARATOR_BITS) != 0) as u8;
     if sleep_mode_u8 == 0 {
         analog::write(
@@ -1413,7 +1403,7 @@ pub extern "C" fn cpu_long_sleep_wakeup_32k_xtal(
         } else {
             wake_m64
                 .wrapping_add(startup::tick_cur)
-                .wrapping_sub(((dt << 5).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1) / CRYSTAL32768_TICK_PER_32CYCLE))
+                .wrapping_sub((dt << 5).wrapping_add(CRYSTAL32768_TICK_PER_32CYCLE >> 1) / CRYSTAL32768_TICK_PER_32CYCLE)
         };
         core::ptr::write_volatile(reg8(0x0080_074c), 0x2c);
         core::ptr::write_volatile(reg32(0x0080_0754), wake_tick);

@@ -9,7 +9,6 @@ use crate::regs8258::{
     REG_MSPI_CTRL, REG_MSPI_DATA, REG_PM_INFO0, REG_PM_INFO1, REG_PM_WAKEUP_FLAG, REG_PWDN_CTRL,
     REG_RF_IRQ_STATUS, REG_RST0, REG_RST1, REG_RST2, REG_SUSPEND_RET_ADDR_HI, REG_SYSTEM_TICK,
     REG_SYSTEM_TICK_CTRL, REG_TMR0_TICK, REG_TMR1_TICK, REG_TMR2_TICK, REG_TMR_STA, REG_WAKEUP_SRC,
-    REG_CLK_SEL,
 };
 use crate::{analog, clock, gpio, interrupt, timer};
 
@@ -71,7 +70,6 @@ pub struct MiscPara {
     pub _reserved: u8,
 }
 
-const MCU_STATUS_BOOT: u8 = 0;
 const MCU_STATUS_DEEPRET_BACK: u8 = 1;
 const MCU_STATUS_DEEP_BACK: u8 = 2;
 
@@ -79,7 +77,6 @@ const REG_PM_RET_CTRL0: usize = REG_DFIFO0_ADDR;
 const REG_PM_RET_CTRL1: usize = REG_DFIFO1_ADDR;
 const REG_PM_RET_BYTE: usize = REG_DFIFO0_SIZE;
 const REG_PM_RET_CLR: usize = REG_DMA_CHN_EN;
-const REG_PM_WAIT: usize = REG_SYSTEM_TICK_CTRL;
 const REG_RF_IRQ_DONE: usize = REG_RF_IRQ_STATUS;
 const TCMD_UNDER_WR: u8 = 0x40;
 const TCMD_MASK: u8 = 0x3f;
@@ -384,9 +381,9 @@ pub extern "C" fn __tc32_flash_wakeup() {
         // flash wake sequence to back-to-back writes and left flash asleep
         // after retention wake.
         let mut delay = 0u32;
-        while unsafe { core::ptr::read_volatile(&raw const delay) } <= 6 {
-            let next = unsafe { core::ptr::read_volatile(&raw const delay) }.wrapping_add(1);
-            unsafe { core::ptr::write_volatile(&raw mut delay, next) };
+        while core::ptr::read_volatile(&raw const delay) <= 6 {
+            let next = core::ptr::read_volatile(&raw const delay).wrapping_add(1);
+            core::ptr::write_volatile(&raw mut delay, next);
         }
         core::ptr::write_volatile(flash.add(1), 1);
     }
