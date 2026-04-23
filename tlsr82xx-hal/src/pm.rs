@@ -100,6 +100,16 @@ impl WakeupSource {
     pub const fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }
+
+    #[inline(always)]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline(always)]
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
 }
 
 impl core::ops::BitOr for WakeupSource {
@@ -290,6 +300,13 @@ impl Pm {
     pub fn sleep(&mut self, request: SleepRequest) -> SleepResult {
         SleepResult {
             raw: sleep_until_tick_impl(request.mode, request.wakeup_src, request.wakeup_tick),
+        }
+    }
+
+    #[inline(always)]
+    pub fn sleep_until_wakeup(&mut self, mode: SleepMode, wakeup_src: WakeupSource) -> SleepResult {
+        SleepResult {
+            raw: sleep_until_wakeup_impl(mode, wakeup_src),
         }
     }
 
@@ -582,6 +599,23 @@ fn sleep_until_tick_impl(mode: SleepMode, wakeup_src: WakeupSource, wakeup_tick:
     {
         let _ = (mode, wakeup_src, wakeup_tick);
         unimplemented!("pm::sleep_until_tick is only implemented for chip-8258")
+    }
+}
+
+#[inline(always)]
+fn sleep_until_wakeup_impl(mode: SleepMode, wakeup_src: WakeupSource) -> u32 {
+    #[cfg(not(feature = "chip-8258"))]
+    {
+        let _ = (mode, wakeup_src);
+        unimplemented!("pm::sleep_until_wakeup is only implemented for chip-8258")
+    }
+    #[cfg(feature = "chip-8258")]
+    {
+        let wakeup_src = wakeup_src.without(WakeupSource::TIMER);
+        if wakeup_src.is_empty() || mode.is_suspend() {
+            return STATUS_GPIO_ERR_NO_ENTER_PM;
+        }
+        sleep_until_tick_impl(mode, wakeup_src, timer::clock_time())
     }
 }
 
@@ -1734,7 +1768,7 @@ pub extern "C" fn cpu_wakeup_init() {
 mod tests {
     use super::{
         sleep_ms_kind, sys_ticks_to_32k_ticks, ticks_32k_to_sys_ticks, Clock32kSource, SleepMsKind,
-        PM_NORMAL_SLEEP_MAX_MS,
+        WakeupSource, PM_NORMAL_SLEEP_MAX_MS,
     };
 
     #[test]
@@ -1768,5 +1802,12 @@ mod tests {
             sleep_ms_kind(PM_NORMAL_SLEEP_MAX_MS.saturating_add(1)),
             SleepMsKind::Long
         );
+    }
+
+    #[test]
+    fn wakeup_source_can_drop_timer_for_pad_only_sleep() {
+        let src = (WakeupSource::PAD | WakeupSource::TIMER).without(WakeupSource::TIMER);
+        assert_eq!(src, WakeupSource::PAD);
+        assert!(!src.contains(WakeupSource::TIMER));
     }
 }
