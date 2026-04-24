@@ -3,7 +3,7 @@
 
 use core::panic::PanicInfo;
 
-use embedded_hal::digital::{InputPin, OutputPin, PinState};
+use embedded_hal::digital::{OutputPin, PinState};
 use tlsr82xx_boards::tb03f::Board;
 use tlsr82xx_hal::pac;
 
@@ -14,9 +14,10 @@ pub extern "C" fn main() -> i32 {
     let _ = platform::drv_platform_init();
 
     let mut board = Board::from_peripherals(unsafe { pac::Peripherals::steal() });
+    board.enable_button1();
 
     loop {
-        let b1 = InputPin::is_low(&mut board.button1).unwrap_or(false);
+        let b1 = board.button1_pressed();
 
         let _ = board.led_y.set_state(PinState::from(b1));
         let _ = board.led_w.set_state(PinState::from(b1));
